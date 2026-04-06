@@ -1,6 +1,7 @@
 use nalgebra::*;
 use obj::{Obj, ObjData};
-use parry3d_f64::math::UnitVector;
+use parry3d_f64::glamx::dvec3;
+use parry3d_f64::math::Vec3;
 use parry3d_f64::query::{IntersectResult, PointQuery};
 use parry3d_f64::shape::{Cuboid, HalfSpace, Polyline, Shape, TriMesh, TriMeshFlags};
 use parry3d_f64::transformation::intersect_meshes;
@@ -9,29 +10,26 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::RwLock;
+use std::time::Instant;
 
-mod sliced_mesh;
-mod plane;
-mod hydrostatics;
-use sliced_mesh::*;
-use plane::*;
-use hydrostatics::*;
+use crate::tools::Plane;
+
+mod tools;
 
 fn main() {
-    let scale = 0.001;
-    let mesh = load_stl(Path::new("assets/Sofiya.stl")).scaled(&Vector3::new(scale, scale, scale));
+    let scale = 0.001f64;
+    let mesh = load_stl(Path::new("assets/Sofiya.stl")).scaled(dvec3(scale, scale, scale));
     
-    let sliced_mesh = slice_parry_mesh(&mesh, plane: &Plane);
-    let plane_x = Plane::from_point_and_normal(Point3::new(0., 0., 4.), Vector3::new(0., 0., 1.));
-    let hydrostatics = calculate_hydrostatics(sliced_mesh, &plane_x);
+    let plane = Plane::from_point_and_normal(Point3::new(0., 0., 4.), Vector3::new(0., 0., 1.));
+    let t = Instant::now();
+    let sliced_mesh = plane.slice_mesh(&mesh);
+    let hydrostatics = sliced_mesh.hydrostatics(&plane);
+    let elapsed = t.elapsed();
+    println!("Volume: {}", hydrostatics.volume);
+    println!("Center of buoyancy: {}", hydrostatics.center_of_buoyancy);
+    println!("Elapsed: {:?}", elapsed);
 }
 
-#[inline(always)]
-fn intersect_edge(a: &Point3<f64>, b: &Point3<f64>, d_a: f64, d_b: f64) -> Point3<f64> {
-    // Доля пути от 'a' до 'b', где расстояние становится равным 0
-    let t = d_a / (d_a - d_b);
-    a + (b - a) * t
-}
 
 fn load_obj(path: &Path) -> TriMesh {
     let Obj {
@@ -42,7 +40,7 @@ fn load_obj(path: &Path) -> TriMesh {
     } = Obj::load(path).unwrap();
     let vertices = position
         .iter()
-        .map(|v| Point3::new(v[0] as f64, v[1] as f64, v[2] as f64))
+        .map(|v| Vec3::new(v[0] as f64, v[1] as f64, v[2] as f64))
         .collect::<Vec<_>>();
     let indices = objects[0].groups[0]
         .polys
@@ -59,7 +57,7 @@ fn load_stl(path: &Path) -> TriMesh {
     let vertices = stl
         .vertices
         .into_iter()
-        .map(|v| Point3::new(v[0] as f64, v[1] as f64, v[2] as f64))
+        .map(|v| Vec3::new(v[0] as f64, v[1] as f64, v[2] as f64))
         .collect::<Vec<_>>();
     let indices = stl
         .faces
