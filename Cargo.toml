@@ -1,0 +1,15 @@
+[package]
+name = "test_cutting"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nalgebra = "~0.34"
+obj = "~0.10"
+stl_io = "~0.10"
+spade = "2.15"
+parry3d-f64 = { git = "https://github.com/KnstAnt/parry.git" }
+#baby_shark = "0.3.12"
+#parry3d-f64 = "0.19.0"
+#parry2d-f64 = "0.19.0"
+#csgrs = "0.20.1"
