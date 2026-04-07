@@ -2,6 +2,8 @@ use nalgebra::{Point3, Vector3};
 
 use crate::tools::{Hydrostatics, Plane};
 
+///
+/// Результат сечения солида плоскостью
 pub struct SlicedMesh {
     /// Треугольники, оказавшиеся под плоскостью (полезный объем)
     pub submerged_triangles: Vec<[Point3<f64>; 3]>,
