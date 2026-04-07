@@ -15,19 +15,26 @@ use std::time::Instant;
 use crate::tools::Plane;
 
 mod tools;
+#[cfg(test)]
+mod tests;
 
 fn main() {
     let scale = 0.001f64;
-    let mesh = load_stl(Path::new("assets/Sofiya.stl")).scaled(dvec3(scale, scale, scale));
-    
-    let plane = Plane::from_point_and_normal(Point3::new(0., 0., 4.), Vector3::new(0., 0., 1.));
-    let t = Instant::now();
-    let sliced_mesh = plane.slice_mesh(&mesh);
-    let hydrostatics = sliced_mesh.hydrostatics(&plane);
-    let elapsed = t.elapsed();
-    println!("Volume: {}", hydrostatics.volume);
-    println!("Center of buoyancy: {}", hydrostatics.center_of_buoyancy);
-    println!("Elapsed: {:?}", elapsed);
+    for path in ["assets/ark.stl", "assets/Sofiya.stl", "assets/ark.stl", "assets/Sofiya.stl"] {
+        let mesh = load_stl(Path::new(path)).scaled(dvec3(scale, scale, scale));
+        
+        let plane = Plane::from_point_and_normal(Point3::new(0., 0., 4.), Vector3::new(0., 0., 1.));
+        let t = Instant::now();
+        let sliced_mesh = plane.slice_mesh(&mesh);
+        let mut elapsed = vec![t.elapsed()];
+        let t = Instant::now();
+        let hydrostatics = sliced_mesh.hydrostatics(&plane);
+        elapsed.push(t.elapsed());
+        println!("\nTest model: {}", path);
+        println!("Volume: {}", hydrostatics.volume);
+        println!("Center of buoyancy: {}", hydrostatics.center_of_buoyancy);
+        println!("Elapsed slice {:?}, hydrostatics {:?}", elapsed[0], elapsed[1]);
+    }
 }
 
 
