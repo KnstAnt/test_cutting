@@ -18,7 +18,8 @@ fn basic() {
         let conf = SolverConfig {
             max_iterations: 20,    // Newton-Raphson обычно сходится за 5-10 шагов. 20 — с запасом.
             tolerance: 1e-4,       // Точность 0.1 мм для координат и 0.0001 м³ для объема.
-            delta: 1e-5,           // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_z: 1e-4,         // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-4,     // Шаг для численной производной. f64 позволяет брать малые значения.
         };
         // Настраиваем "погрузку" на ~50% от высоты меша
         let loading_condition = LoadingCondition {
@@ -66,7 +67,8 @@ fn solver_cube_equilibrium() {
         &SolverConfig {
             max_iterations: 50,
             tolerance: 1e-6,
-            delta: 1e-5,
+            delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
         }
     ).unwrap();
 
@@ -120,7 +122,8 @@ fn test_equilibrium_cube_draft() {
         &SolverConfig {
             max_iterations: 50,
             tolerance: 1e-6,
-            delta: 1e-5,
+            delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
         },
     ).expect("Solver failed");
 
@@ -152,7 +155,8 @@ fn test_translation_invariance() {
         &SolverConfig {
             max_iterations: 50,
             tolerance: 1e-6,
-            delta: 1e-5,
+            delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
         },
     ).unwrap();
 
@@ -182,7 +186,8 @@ fn test_random_initial_guess() {
             &SolverConfig {
                 max_iterations: 50,
                 tolerance: 1e-5,
-                delta: 1e-5,
+                delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
+                delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
             },
         );
 
@@ -214,7 +219,8 @@ fn test_rotated_cube_equilibrium() {
         &SolverConfig {
             max_iterations: 50,
             tolerance: 1e-5,
-            delta: 1e-5,
+            delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
         },
     ).unwrap();
 
@@ -242,7 +248,8 @@ fn test_small_waterline_area() {
         &SolverConfig {
             max_iterations: 50,
             tolerance: 1e-5,
-            delta: 1e-5,
+            delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
         },
     );
 
@@ -273,7 +280,8 @@ fn test_two_bodies() {
         &SolverConfig {
             max_iterations: 50,
             tolerance: 1e-5,
-            delta: 1e-5,
+            delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
         },
     );
 
