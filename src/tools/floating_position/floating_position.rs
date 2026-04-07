@@ -121,9 +121,11 @@ pub fn find_equilibrium(
                 current_pos.trim_ry -= grad[2] * 0.01;
                 lambda = (lambda * 10.0).min(1e5);
             }
+            current_pos.draft_z = current_pos.draft_z.clamp(-100.0, 100.0);
+            current_pos.heel_rx = current_pos.heel_rx.clamp(-0.5, 0.5);
+            current_pos.trim_ry = current_pos.trim_ry.clamp(-0.5, 0.5);
         } else {
             // Фолбэк на случай экстремальной числовой нестабильности
-
             lambda = lambda * 10.0;
             // let grad = jacobian.transpose() * f_x;
             // current_pos.draft_z -= grad[0].clamp(-1.0, 1.0) * 0.01;
