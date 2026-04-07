@@ -59,7 +59,6 @@ pub fn find_equilibrium(
 
         // Нормализуем вектор ошибок: теперь всё в МЕТРАХ
         let f_x = make_f(&hydro, target);
-
         let new_norm = f_x.norm();
         if current_fx_norm.is_nan() {
             current_fx_norm = new_norm;
@@ -78,18 +77,16 @@ pub fn find_equilibrium(
             // Ограничитим шаг Ньютона
             let step_norm = step.norm();
             if step_norm > 1.0 {
-                step /= step_norm;
+                step /= step_norm; // Защита от гигантских прыжков
             }
-            // --- BACKTRACKING LINE SEARCH ---
             let mut alpha = 1.0;
             let mut best_pos = current_pos;
             let mut improved = false;
-
+            
+            // --- BACKTRACKING LINE SEARCH ---
             // Пробуем уменьшать шаг, если он делает хуже
             for _ in 0..10 {
-                if alpha < 1e-4 {
-                    break;
-                }
+                if alpha < 1e-4 { break; }
                 let trial_pos = FloatingPosition {
                     draft_z: current_pos.draft_z + step[0] * alpha,
                     heel_rx: current_pos.heel_rx + step[1] * alpha,
@@ -111,24 +108,31 @@ pub fn find_equilibrium(
                 alpha *= 0.5; // Слишком большой прыжок, уменьшаем вдвое
             }
 
-            if !improved {
-                // Если даже маленький шаг не помогает, пробуем хоть куда-то сдвинуться
-                current_pos.draft_z += step[0] * 0.1; 
-                lambda *= 10.0;
-            } else {
+            if improved {
+                // Шаг успешен, уменьшаем влияние градиентного спуска
                 current_pos = best_pos;
-                lambda *= 0.3;
+                lambda = (lambda * 0.3).max(1e-7);
+            } else {
+                // Шаг неудачен, увеличиваем lambda (переход к градиентному спуску)
+                // 🔥 ВАЖНО: двигаемся даже если не улучшилось
+                let grad = jacobian.transpose() * f_x;
+                current_pos.draft_z -= grad[0] * 0.01;
+                current_pos.heel_rx -= grad[1] * 0.01;
+                current_pos.trim_ry -= grad[2] * 0.01;
+                lambda = (lambda * 10.0).min(1e5);
             }
         } else {
-            // fallback: градиентный шаг
-            let grad = jacobian.transpose() * f_x;
-            current_pos.draft_z -= grad[0].clamp(-1.0, 1.0) * 0.01;
-            current_pos.heel_rx -= grad[1] * 0.01;
-            current_pos.trim_ry -= grad[2] * 0.01;
-            current_pos.draft_z = current_pos.draft_z.clamp(-10.0, 10.0);
-            current_pos.heel_rx = current_pos.heel_rx.clamp(-0.5, 0.5);
-            current_pos.trim_ry = current_pos.trim_ry.clamp(-0.5, 0.5);
-            continue;
+            // Фолбэк на случай экстремальной числовой нестабильности
+
+            lambda = lambda * 10.0;
+            // let grad = jacobian.transpose() * f_x;
+            // current_pos.draft_z -= grad[0].clamp(-1.0, 1.0) * 0.01;
+            // current_pos.heel_rx -= grad[1] * 0.01;
+            // current_pos.trim_ry -= grad[2] * 0.01;
+            // current_pos.draft_z = current_pos.draft_z.clamp(-10.0, 10.0);
+            // current_pos.heel_rx = current_pos.heel_rx.clamp(-0.5, 0.5);
+            // current_pos.trim_ry = current_pos.trim_ry.clamp(-0.5, 0.5);
+            // continue;
             // return Err("Singular Jacobian");
         }
     }
@@ -176,7 +180,8 @@ fn calculate_normalized_jacobian(
 /// 
 fn make_f(h: &Hydrostatics, target: &LoadingCondition) -> Vector3<f64> {
     let v_scale = target.target_volume.max(1.0);
-    let l_scale = 1.0; // характерный размер
+    let l_scale = target.target_volume.cbrt(); // характерный размер
+    // let l_scale = 1.0; // характерный размер
     Vector3::new(
         (h.volume - target.target_volume) / v_scale,
         (h.center_of_buoyancy.x - target.target_lcg) / l_scale,
