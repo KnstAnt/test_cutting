@@ -116,6 +116,11 @@ impl Plane {
 #[inline(always)]
 fn intersect_edge(a: &Vector, b: &Vector, d_a: f64, d_b: f64) -> Vec3 {
     // Доля пути от 'a' до 'b', где расстояние становится равным 0
-    let t = d_a / (d_a - d_b);
+    let denom = d_a - d_b;
+    if denom.abs() < 1e-8 {
+        return *a; // Разница слишком мала, точки практически в одном месте
+    }
+    let t = d_a / denom;
+    // let t = d_a / (d_a - d_b);
     a + (b - a) * t
 }
