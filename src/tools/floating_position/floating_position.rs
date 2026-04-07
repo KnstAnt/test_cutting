@@ -1,7 +1,7 @@
 use nalgebra::{Matrix3, Point3, Rotation3, Vector3};
-use parry3d_f64::shape::{Shape, TriMesh};
+use parry3d_f64::shape::TriMesh;
 
-use crate::tools::Plane;
+use crate::tools::{Hydrostatics, Plane};
 
 ///
 /// Целевые параметры (Дано)
@@ -50,24 +50,15 @@ pub fn find_equilibrium(
 ) -> Result<FloatingPosition, &'static str> {
     let mut current_pos = initial_guess;
     let mut current_fx_norm = f64::MAX;
+    let mut lambda = 1e-2;
 
     for i in 0..config.max_iterations {
         let plane = current_pos.to_plane();
         let slice = plane.slice_mesh(mesh);
         let hydro = slice.hydrostatics(&plane);
-        // let area = slice.waterline_area().max(0.1); // Защита от нуля
 
         // Нормализуем вектор ошибок: теперь всё в МЕТРАХ
-        // let f_x = Vector3::new(
-        //     (hydro.volume - target.target_volume) / area, // Ошибка в метрах осадки
-        //     hydro.center_of_buoyancy.x - target.target_lcg,
-        //     hydro.center_of_buoyancy.y - target.target_tcg,
-        // );
-        let f_x = Vector3::new(
-            hydro.volume - target.target_volume,
-            (hydro.center_of_buoyancy.x - target.target_lcg) * hydro.volume,
-            (hydro.center_of_buoyancy.y - target.target_tcg) * hydro.volume,
-        );
+        let f_x = make_f(&hydro, target);
 
         let new_norm = f_x.norm();
         current_fx_norm = new_norm;
@@ -78,15 +69,23 @@ pub fn find_equilibrium(
 
         // Численный Якобиан (используй ту же логику нормализации внутри!)
         let jacobian = calculate_normalized_jacobian(mesh, current_pos, config.delta_z, config.delta_angle, target);
-
-        if let Some(step) = jacobian.lu().solve(&(-f_x)) {
+        let jtj = jacobian.transpose() * jacobian + Matrix3::identity() * lambda;
+        if let Some(mut step) = jtj.lu().solve(&(jacobian.transpose() * -f_x)) {
+            // Ограничитим шаг Ньютона
+            let step_norm = step.norm();
+            if step_norm > 1.0 {
+                step /= step_norm;
+            }
             // --- BACKTRACKING LINE SEARCH ---
             let mut alpha = 1.0;
             let mut best_pos = current_pos;
             let mut improved = false;
 
             // Пробуем уменьшать шаг, если он делает хуже
-            for _ in 0..5 {
+            for _ in 0..10 {
+                if alpha < 1e-4 {
+                    break;
+                }
                 let trial_pos = FloatingPosition {
                     draft_z: current_pos.draft_z + step[0] * alpha,
                     heel_rx: current_pos.heel_rx + step[1] * alpha,
@@ -114,14 +113,20 @@ pub fn find_equilibrium(
             if !improved {
                 // Если даже маленький шаг не помогает, пробуем хоть куда-то сдвинуться
                 current_pos.draft_z += step[0] * 0.1; 
+                lambda *= 10.0;
             } else {
                 current_pos = best_pos;
+                lambda *= 0.3;
             }
         } else {
             // fallback: градиентный шаг
-            current_pos.draft_z -= f_x[0].clamp(-1.0, 1.0) * 0.1;
-            current_pos.heel_rx -= f_x[1] * 0.01;
-            current_pos.trim_ry -= f_x[2] * 0.01;
+            let grad = jacobian.transpose() * f_x;
+            current_pos.draft_z -= grad[0].clamp(-1.0, 1.0) * 0.01;
+            current_pos.heel_rx -= grad[1] * 0.01;
+            current_pos.trim_ry -= grad[2] * 0.01;
+            current_pos.draft_z = current_pos.draft_z.clamp(-10.0, 10.0);
+            current_pos.heel_rx = current_pos.heel_rx.clamp(-0.5, 0.5);
+            current_pos.trim_ry = current_pos.trim_ry.clamp(-0.5, 0.5);
             continue;
             // return Err("Singular Jacobian");
         }
@@ -142,12 +147,7 @@ fn calculate_normalized_jacobian(
         let p = pos.to_plane();
         let s = p.slice_mesh(mesh);
         let h = s.hydrostatics(&p);
-    
-        Vector3::new(
-            h.volume - target.target_volume,
-            (h.center_of_buoyancy.x - target.target_lcg) * h.volume,
-            (h.center_of_buoyancy.y - target.target_tcg) * h.volume,
-        )
+        make_f(&h, &target)
     };    // Колонка 0: Draft
     let mut pos_z_plus = current_pos;
     pos_z_plus.draft_z += delta_z;
@@ -170,4 +170,15 @@ fn calculate_normalized_jacobian(
     let df_dry = (get_f(pos_ry_plus) - get_f(pos_ry_minus)) / (2.0 * delta_angle);
     jacobian.set_column(2, &df_dry);
     jacobian
+}
+///
+/// 
+fn make_f(h: &Hydrostatics, target: &LoadingCondition) -> Vector3<f64> {
+    let v_scale = target.target_volume.max(1.0);
+    let l_scale = 1.0; // характерный размер (пока можно 1.0)
+    Vector3::new(
+        (h.volume - target.target_volume) / v_scale,
+        (h.center_of_buoyancy.x - target.target_lcg) / l_scale,
+        (h.center_of_buoyancy.y - target.target_tcg) / l_scale,
+    )
 }
