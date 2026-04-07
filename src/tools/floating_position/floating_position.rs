@@ -49,7 +49,7 @@ pub fn find_equilibrium(
     config: &SolverConfig
 ) -> Result<FloatingPosition, &'static str> {
     let mut current_pos = initial_guess;
-    let mut current_fx_norm = f64::MAX;
+    let mut current_fx_norm = f64::NAN;
     let mut lambda = 1e-2;
 
     for i in 0..config.max_iterations {
@@ -61,7 +61,9 @@ pub fn find_equilibrium(
         let f_x = make_f(&hydro, target);
 
         let new_norm = f_x.norm();
-        current_fx_norm = new_norm;
+        if current_fx_norm.is_nan() {
+            current_fx_norm = new_norm;
+        }
         if new_norm < config.tolerance {
             println!("✅ Сходимость на итерации {}: fx={}", i, new_norm);
             return Ok(current_pos);
@@ -95,12 +97,9 @@ pub fn find_equilibrium(
                 let t_plane = trial_pos.to_plane();
                 let t_slice = t_plane.slice_mesh(mesh);
                 let t_hydro = t_slice.hydrostatics(&t_plane);
-                // let t_area = t_slice.waterline_area().max(0.1);
-                let t_fx = Vector3::new(
-                    t_hydro.volume - target.target_volume,
-                    (t_hydro.center_of_buoyancy.x - target.target_lcg) * t_hydro.volume,
-                    (t_hydro.center_of_buoyancy.y - target.target_tcg) * t_hydro.volume,
-                );
+
+                // Замените блок расчета t_fx на:
+                let t_fx = make_f(&t_hydro, target);
                 if t_fx.norm() < current_fx_norm {
                     best_pos = trial_pos;
                     current_fx_norm = t_fx.norm();
@@ -175,7 +174,7 @@ fn calculate_normalized_jacobian(
 /// 
 fn make_f(h: &Hydrostatics, target: &LoadingCondition) -> Vector3<f64> {
     let v_scale = target.target_volume.max(1.0);
-    let l_scale = 1.0; // характерный размер (пока можно 1.0)
+    let l_scale = 1.0; // характерный размер
     Vector3::new(
         (h.volume - target.target_volume) / v_scale,
         (h.center_of_buoyancy.x - target.target_lcg) / l_scale,
