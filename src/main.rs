@@ -54,7 +54,7 @@ fn test_sofia() -> usize {
         for &heel in &heel_steps {
             for &trim in &trim_steps {
                 let normal = normal(heel, trim);
-                let plane = Plane::from_point_and_normal(Point3::new(0., 0., dz as f64), normal);
+                let plane = Plane::from_point_and_normal(Point3::new(65.25, 0., dz as f64), normal);
                 let sliced_mesh = plane.slice_mesh(&mesh);
                 let hydrostatics = sliced_mesh.hydrostatics(&plane);
                 println!("{} {} {} normal:({:.3}, {:.3}, {:.3}) v: {} {}", 
@@ -152,15 +152,24 @@ pub fn position(center: &Point3<f64>, heel: f64, trim: f64, draught: f64) -> Iso
     Isometry::from_parts(translation, rotation)
 }
 
-
+/*
 /// Расчет нормали по крену и дифференту
 pub fn normal(heel: f64, trim: f64) -> Vector3<f64> {
-    let heel_rad = -heel.to_radians();
-    let trim_rad = trim.to_radians();
+    let heel_rad = heel.to_radians();
+    let trim_rad = -trim.to_radians();
     let trim_rotation = UnitQuaternion::from_axis_angle(&Vector3::y_axis(), trim_rad);
     let transformed_x_axis = trim_rotation.transform_vector(&Vector3::x_axis());
     let transformed_x_axis = UnitVector3::new_normalize(transformed_x_axis);
     let heel_rotation = UnitQuaternion::from_axis_angle(&transformed_x_axis, heel_rad);
     let rotation = heel_rotation * trim_rotation;
+    rotation.transform_vector(&Vector3::new(0., 0., 1.))
+}
+*/
+
+/// Расчет нормали по крену и дифференту
+pub fn normal(heel: f64, trim: f64) -> Vector3<f64> {
+    let heel_rad = heel.to_radians();
+    let trim_rad = -trim.to_radians();
+    let rotation = UnitQuaternion::from_euler_angles(heel_rad, trim_rad, 0.);
     rotation.transform_vector(&Vector3::new(0., 0., 1.))
 }
