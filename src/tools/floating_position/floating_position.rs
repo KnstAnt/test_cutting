@@ -69,10 +69,12 @@ pub fn find_equilibrium(
             return Ok(current_pos);
         }
 
-        // Численный Якобиан (используй ту же логику нормализации внутри!)
+        // Численный Якобиан
         let jacobian = calculate_normalized_jacobian(mesh, current_pos, config.delta_z, config.delta_angle, target);
+        // Матрица Якобиана с регуляризацией Левенберга-Марквардта
         let jtj = jacobian.transpose() * jacobian + Matrix3::identity() * lambda;
-        if let Some(mut step) = jtj.lu().solve(&(jacobian.transpose() * -f_x)) {
+        let gradient = jacobian.transpose() * -f_x;
+        if let Some(mut step) = jtj.lu().solve(&gradient) {
             // Ограничитим шаг Ньютона
             let step_norm = step.norm();
             if step_norm > 1.0 {
