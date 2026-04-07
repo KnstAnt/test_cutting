@@ -96,4 +96,13 @@ impl SlicedMesh {
             center_of_buoyancy,
         }
     }
+    ///
+    /// Расчет площади ватерлинии
+    pub fn waterline_area(&self) -> f64 {
+        // Сумма площадей треугольников "крышки" через векторное произведение
+        // Или просто площадь 2D проекции контура
+        self.waterline_edges.iter()
+            .map(|[a, b]| (a.x * b.y - b.x * a.y))
+            .sum::<f64>().abs() * 0.5
+    }
 }
