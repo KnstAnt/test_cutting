@@ -9,9 +9,9 @@ obj = "~0.10"
 stl_io = "~0.10"
 spade = "2.15"
 
-parry3d-f64 = "~0.26"
+#parry3d-f64 = "~0.26"
 
-# parry3d-f64 = { git = "https://github.com/KnstAnt/parry.git" }
+parry3d-f64 = { git = "https://github.com/KnstAnt/parry.git" }
 #baby_shark = "0.3.12"
 #parry3d-f64 = "0.19.0"
 #parry2d-f64 = "0.19.0"

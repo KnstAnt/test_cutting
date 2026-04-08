@@ -1,5 +1,4 @@
 use nalgebra::{Point3, Vector3};
-use parry3d_f64::math::{Vec3, Vector};
 use parry3d_f64::shape::TriMesh;
 
 use crate::tools::SlicedMesh;
@@ -29,7 +28,7 @@ impl Plane {
     /// что типично для задачи расчета погруженного объема судна.
     /// Также мы соберем отрезки, лежащие на самой секущей плоскости (периметр сечения).
     pub fn slice_mesh(&self, mesh: &TriMesh) -> SlicedMesh {
-        let vertices: &[Vector] = mesh.vertices(); // !!! &[Vec3]
+        let vertices  = mesh.vertices(); 
         let indices = mesh.indices();
         // Шаг 1: Предварительно вычисляем расстояния для всех вершин.
         // Это отлично векторизуется и предотвращает повторные расчеты для смежных треугольников.
@@ -114,7 +113,7 @@ impl Plane {
 /// $$I = V_a + \frac{d_a}{d_a - d_b} (V_b - V_a)$$
 /// ```
 #[inline(always)]
-fn intersect_edge(a: &Vector, b: &Vector, d_a: f64, d_b: f64) -> Vec3 {
+fn intersect_edge(a: &Point3<f64>, b: &Point3<f64>, d_a: f64, d_b: f64) -> Point3<f64> {
     // Доля пути от 'a' до 'b', где расстояние становится равным 0
     let t = d_a / (d_a - d_b);
     a + (b - a) * t
