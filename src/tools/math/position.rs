@@ -3,6 +3,8 @@ use std::{
     iter::Sum,
     ops::{Add, AddAssign, Sub},
 };
+
+use parry3d_f64::math::Vec3;
 //
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct Position {
@@ -85,14 +87,14 @@ impl From<Position> for [f64; 3] {
     }
 }
 //
-impl From<Position> for nalgebra::Point3<f64> {
+impl From<Position> for Vec3 {
     fn from(val: Position) -> Self {
-        nalgebra::Point3::new(val.x, val.y, val.z)
+        Vec3::new(val.x, val.y, val.z)
     }
 }
 //
-impl From<nalgebra::Point3<f64>> for Position {
-    fn from(v: nalgebra::Point3<f64>) -> Self {
+impl From<Vec3> for Position {
+    fn from(v: Vec3) -> Self {
         Self::new(v.x, v.y, v.z)
     }
 }

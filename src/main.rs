@@ -1,7 +1,6 @@
-use nalgebra::*;
 use obj::{Obj, ObjData};
-//use parry3d_f64::glamx::dvec3;
-//use parry3d_f64::math::Vec3;
+use parry3d_f64::glamx::DQuat;
+use parry3d_f64::math::*;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -17,15 +16,15 @@ fn main() {
     test_sofia();
 }
 
-fn calculate(mut mesh: TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> (f64, Point3<f64>) {
-    let center = Point3::new(dx, 0., 0.);
+fn calculate(mut mesh: TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> (f64, Vec3) {
+    let center = Vec3::new(dx, 0., 0.);
     let isometry = position(&center, heel, trim, draught);
     mesh.transform_vertices(&isometry);
-    let plane = Plane::from_point_and_normal(center, Vector3::new(0., 0., 1.));
+    let plane = Plane::from_point_and_normal(center, Vec3::new(0., 0., 1.));
     let sliced_mesh = plane.slice_mesh(&mesh);
     let hydrostatics = sliced_mesh.hydrostatics(&plane);
     let center_of_buoyancy = hydrostatics.center_of_buoyancy;
-    let center_of_buoyancy = isometry.inverse_transform_point(&center_of_buoyancy);
+    let center_of_buoyancy = isometry.inverse_transform_point(center_of_buoyancy);
     (hydrostatics.volume, center_of_buoyancy)
 }
 
@@ -33,19 +32,19 @@ fn calculate(mut mesh: TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> 
 fn test_sofia() {
     let scale = 0.001f64;
     let path = "assets/Sofiya.stl";
-    let mut mesh = load_stl(Path::new(path)).scaled(&Vector3::new(scale, scale, scale));
-    let center = Point3::new(65.25, 0., 0.);
+    let mut mesh = load_stl(Path::new(path)).scaled(Vec3::new(scale, scale, scale));
+    let center = Vec3::new(65.25, 0., 0.);
     let heel = 20.;
     let trim = 20.;
     let draught = 8.;
     let isometry = position(&center, heel, trim, draught);
     mesh.transform_vertices(&isometry);
     //   let (center, normal) = normal(center, heel, trim, dz);
-    let plane = Plane::from_point_and_normal(center, Vector3::new(0., 0., 1.));
+    let plane = Plane::from_point_and_normal(center, Vec3::new(0., 0., 1.));
     let sliced_mesh = plane.slice_mesh(&mesh);
     let hydrostatics = sliced_mesh.hydrostatics(&plane);
     let center_of_buoyancy = hydrostatics.center_of_buoyancy;
-    let center_of_buoyancy = isometry.inverse_transform_point(&center_of_buoyancy);
+    let center_of_buoyancy = isometry.inverse_transform_point(center_of_buoyancy);
     println!(
         "{} {} {} center:({:.3}, {:.3}, {:.3})  v: {} {}",
         heel as i32,
@@ -62,11 +61,11 @@ fn test_sofia() {
 fn test_sofia() -> usize {
     let scale = 0.001f64;
     let path = "assets/Sofiya.stl";
-    let mesh = load_stl(Path::new(path)).scaled(&Vector3::new(scale, scale, scale));
+    let mesh = load_stl(Path::new(path)).scaled(&Vec3::new(scale, scale, scale));
     let mut qnt = 0;
     //  let heel_steps = vec![-20., -5., -2., 0., 2., 5., 20.];
     //  let trim_steps = vec![-10., -2., -1., 0., 1., 2., 10.];
-    let center = Point3::new(65.25, 0., 0.);
+    let center = Vec3::new(65.25, 0., 0.);
     let heel_steps = vec![-20., 0., 20.];
     let trim_steps = vec![-20., 0., 20.];
     for dz in 1..=2 {
@@ -107,7 +106,7 @@ fn load_obj(path: &Path) -> TriMesh {
     } = Obj::load(path).unwrap();
     let vertices = position
         .iter()
-        .map(|v| Point3::new(v[0] as f64, v[1] as f64, v[2] as f64))
+        .map(|v| Vec3::new(v[0] as f64, v[1] as f64, v[2] as f64))
         .collect::<Vec<_>>();
     let indices = objects[0].groups[0]
         .polys
@@ -124,7 +123,7 @@ fn load_stl(path: &Path) -> TriMesh {
     let vertices = stl
         .vertices
         .into_iter()
-        .map(|v| Point3::new(v[0] as f64, v[1] as f64, v[2] as f64))
+        .map(|v| Vec3::new(v[0] as f64, v[1] as f64, v[2] as f64))
         .collect::<Vec<_>>();
     let indices = stl
         .faces
@@ -167,7 +166,8 @@ pub fn write_stl(path: &PathBuf, mesh: &TriMesh) {
     buffer.write_all(&binary_stl).unwrap();
 }
 
-pub fn position(center: &Point3<f64>, heel: f64, trim: f64, draught: f64) -> Isometry3<f64> {
+/*
+pub fn position(center: &Vec3, heel: f64, trim: f64, draught: f64) -> Isometry3<f64> {
     let heel_rad = -heel.to_radians();
     let trim_rad = trim.to_radians();
     let trim_rotation = UnitQuaternion::from_axis_angle(&Vector3::y_axis(), trim_rad);
@@ -180,9 +180,36 @@ pub fn position(center: &Point3<f64>, heel: f64, trim: f64, draught: f64) -> Iso
     let point = rotation.transform_point(&center);
     let translation = Translation3::new(-point.x, -point.y, -point.z);
     Isometry::from_parts(translation, rotation)
+}*/
+pub fn position(center: &Vec3, heel: f64, trim: f64, draught: f64) -> Pose3 {
+    let heel_rad = -heel.to_radians();
+    let trim_rad = trim.to_radians();
+
+    // 1. Вращение по дифференту (trim) вокруг оси Y
+    let trim_rotation = DQuat::from_axis_angle(Vec3::Y, trim_rad);
+
+    // 2. Находим трансформированную ось X для крена (heel)
+    let transformed_x_axis = trim_rotation * Vec3::X;
+    
+    // 3. Вращение по крену вокруг новой оси X
+    let heel_rotation = DQuat::from_axis_angle(transformed_x_axis.normalize(), heel_rad);
+    
+    // Итоговое вращение
+    let rotation = heel_rotation * trim_rotation;
+
+    // 4. Смещение центра
+    let mut center_offset = *center;
+    center_offset.z += draught;
+
+    // 5. Вычисляем позицию (в glam вращение точки делается через оператор *)
+    let point = rotation * center_offset;
+
+    // 6. Создаем Isometry (в Parry с фичей glam это структура с полями translation и rotation)
+    Pose3::from_parts(-point, rotation)
 }
 
 /// Расчет нормали по крену и дифференту
+/*
 pub fn normal(heel: f64, trim: f64) -> Vector3<f64> {
     let heel_rad = heel.to_radians();
     let trim_rad = -trim.to_radians();
@@ -191,5 +218,25 @@ pub fn normal(heel: f64, trim: f64) -> Vector3<f64> {
     let transformed_x_axis = UnitVector3::new_normalize(transformed_x_axis);
     let heel_rotation = UnitQuaternion::from_axis_angle(&transformed_x_axis, heel_rad);
     let rotation = heel_rotation * trim_rotation;
-    rotation.transform_vector(&Vector3::new(0., 0., 1.))
+    rotation.transform_vector(&Vec3::new(0., 0., 1.))
+}
+*/
+pub fn normal(heel: f64, trim: f64) -> Vec3 {
+    let heel_rad = heel.to_radians();
+    let trim_rad = -trim.to_radians();
+    
+    // 1. Вращение по дифференту вокруг оси Y
+    let trim_rotation = DQuat::from_axis_angle(Vec3::Y, trim_rad);
+    
+    // 2. Получаем трансформированную ось X
+    let transformed_x_axis = trim_rotation * Vec3::X;
+    
+    // 3. Вращение по крену вокруг новой оси X
+    let heel_rotation = DQuat::from_axis_angle(transformed_x_axis.normalize(), heel_rad);
+    
+    // 4. Итоговое вращение
+    let rotation = heel_rotation * trim_rotation;
+    
+    // 5. Трансформируем вектор нормали (Z-up)
+    rotation * Vec3::Z
 }
