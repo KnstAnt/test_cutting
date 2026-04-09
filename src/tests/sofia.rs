@@ -9,7 +9,10 @@ use crate::{
 
 #[test]
 fn sofia() {
-    DebugSession::new().filter(LogLevel::Debug).init();
+    DebugSession::new()
+        .filter(LogLevel::Debug)
+        .module("ena::unify", LogLevel::Info)
+        .init();
     let scale = 0.001f64;
     let path = "assets/Sofiya.stl";
     let mesh = load_stl(Path::new(path)).scaled(Vec3::new(scale, scale, scale));
@@ -55,7 +58,7 @@ fn sofia() {
                     } else {
                         0.
                     };
-                    log::debug!(
+                    log::trace!(
                         "{text} result:{result} target:{target} delta_abs:{delta_abs} delta_percent:{delta_percent}"
                     );                    
                     if delta_abs > epsilon_abs || delta_percent > epsilon_percent {
