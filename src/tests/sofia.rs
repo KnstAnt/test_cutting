@@ -1,4 +1,5 @@
 use std::path::Path;
+use debugging::session::debug_session::{DebugSession, LogLevel};
 use parry3d_f64::math::Vec3;
 
 use crate::{
@@ -8,6 +9,7 @@ use crate::{
 
 #[test]
 fn sofia() {
+    DebugSession::new().filter(LogLevel::Debug).init();
     let scale = 0.001f64;
     let path = "assets/Sofiya.stl";
     let mesh = load_stl(Path::new(path)).scaled(Vec3::new(scale, scale, scale));
@@ -53,10 +55,10 @@ fn sofia() {
                     } else {
                         0.
                     };
-                    println!(
+                    log::debug!(
                         "{text} result:{result} target:{target} delta_abs:{delta_abs} delta_percent:{delta_percent}"
                     );                    
-                    if delta_abs > epsilon_abs && delta_percent > epsilon_percent {
+                    if delta_abs > epsilon_abs || delta_percent > epsilon_percent {
                         return Some((delta_abs, delta_percent, text, result, target));
                     }
                     None
@@ -98,8 +100,9 @@ fn sofia() {
     }
     results.sort_by(|a, b| (a.1).partial_cmp(&b.1).unwrap());
   //  let _ = results.split_off(100);
+    log::error!("\nError found {}:", results.len());
     for v in results {
-        println!(
+        log::error!(
             "{} error: result:{} target:{} delta_abs:{} delta_percent:{}",
             v.2, v.3, v.4, v.0, v.1
         );
