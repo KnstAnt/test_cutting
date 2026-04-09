@@ -13,6 +13,144 @@ use std::sync::RwLock;
 use std::time::Instant;
 use crate::tools::Plane;
 mod tools {
+mod floating_position {
+mod floating_position {
+use nalgebra::{Matrix3, Point3, Rotation3, Vector3};
+use parry3d_f64::shape::{Shape, TriMesh};
+use crate::tools::Plane;
+pub struct LoadingCondition {
+    pub target_volume: f64,
+    pub target_lcg: f64,
+    pub target_tcg: f64,
+}
+#[derive(Debug, Clone, Copy)]
+pub struct FloatingPosition {
+    pub draft_z: f64,
+    pub heel_rx: f64,
+    pub trim_ry: f64,
+}
+impl FloatingPosition {
+    pub fn to_plane(&self) -> Plane {
+        let rotation = Rotation3::from_euler_angles(self.heel_rx, self.trim_ry, 0.0);
+        let normal = rotation * Vector3::new(0.0, 0.0, 1.0);
+        let point_on_plane = Point3::new(0.0, 0.0, self.draft_z);
+        Plane::from_point_and_normal(point_on_plane, normal)
+    }
+}
+pub struct SolverConfig {
+    pub max_iterations: usize,
+    pub tolerance: f64,
+    pub delta: f64,
+}
+pub fn find_equilibrium(
+    mesh: &TriMesh,
+    target: &LoadingCondition,
+    initial_guess: FloatingPosition,
+    config: &SolverConfig
+) -> Result<FloatingPosition, &'static str> {
+    let mut current_pos = initial_guess;
+    let mut current_fx_norm = f64::MAX;
+    for i in 0..config.max_iterations {
+        let plane = current_pos.to_plane();
+        let slice = plane.slice_mesh(mesh);
+        let hydro = slice.hydrostatics(&plane);
+        let area = slice.waterline_area().max(0.1);
+        let f_x = Vector3::new(
+            (hydro.volume - target.target_volume) / area,
+            hydro.center_of_buoyancy.x - target.target_lcg,
+            hydro.center_of_buoyancy.y - target.target_tcg,
+        );
+        let new_norm = f_x.norm();
+        if new_norm < config.tolerance {
+            println!("✅ Сходимость на итерации {}: fx={}", i, new_norm);
+            return Ok(current_pos);
+        }
+        let jacobian = calculate_normalized_jacobian(mesh, current_pos, &f_x, area, config.delta, target);
+        if let Some(step) = jacobian.lu().solve(&(-f_x)) {
+            let mut alpha = 1.0;
+            let mut best_pos = current_pos;
+            let mut improved = false;
+            for _ in 0..5 {
+                let trial_pos = FloatingPosition {
+                    draft_z: current_pos.draft_z + step[0] * alpha,
+                    heel_rx: current_pos.heel_rx + step[1] * alpha,
+                    trim_ry: current_pos.trim_ry + step[2] * alpha,
+                };
+                let t_plane = trial_pos.to_plane();
+                let t_slice = t_plane.slice_mesh(mesh);
+                let t_hydro = t_slice.hydrostatics(&t_plane);
+                let t_area = t_slice.waterline_area().max(0.1);
+                let t_fx = Vector3::new(
+                    (t_hydro.volume - target.target_volume) / t_area,
+                    t_hydro.center_of_buoyancy.x - target.target_lcg,
+                    t_hydro.center_of_buoyancy.y - target.target_tcg,
+                );
+                if t_fx.norm() < current_fx_norm {
+                    best_pos = trial_pos;
+                    current_fx_norm = t_fx.norm();
+                    improved = true;
+                    break;
+                }
+                alpha *= 0.5;
+            }
+            if !improved {
+                current_pos.draft_z += step[0] * 0.1;
+            } else {
+                current_pos = best_pos;
+            }
+        } else {
+            return Err("Singular Jacobian");
+        }
+    }
+    Err("Diverged after max iterations")
+}
+fn calculate_normalized_jacobian(
+    mesh: &TriMesh,
+    current_pos: FloatingPosition,
+    f_x_normalized: &Vector3<f64>,
+    base_area: f64,
+    config_delta: f64,
+    target: &LoadingCondition
+) -> Matrix3<f64> {
+    let mut jacobian = Matrix3::zeros();
+    let delta = config_delta;
+    let get_norm_f = |pos: FloatingPosition| {
+        let p = pos.to_plane();
+        let s = p.slice_mesh(mesh);
+        let h = s.hydrostatics(&p);
+        Vector3::new(
+            (h.volume - target.target_volume) / base_area,
+            h.center_of_buoyancy.x - target.target_lcg,
+            h.center_of_buoyancy.y - target.target_tcg,
+        )
+    };
+    let mut pos_z = current_pos; pos_z.draft_z += delta;
+    jacobian.set_column(0, &((get_norm_f(pos_z) - f_x_normalized) / delta));
+    let mut pos_rx = current_pos; pos_rx.heel_rx += delta;
+    jacobian.set_column(1, &((get_norm_f(pos_rx) - f_x_normalized) / delta));
+    let mut pos_ry = current_pos; pos_ry.trim_ry += delta;
+    jacobian.set_column(2, &((get_norm_f(pos_ry) - f_x_normalized) / delta));
+    jacobian
+}
+fn calculate_numerical_jacobian(mesh: &TriMesh, current_pos: FloatingPosition, f_x: &Vector3<f64>, config_delta: f64) -> Matrix3<f64> {
+    let mut jacobian = Matrix3::zeros();
+    let mut pos_z = current_pos;
+    pos_z.draft_z += config_delta;
+    let d_hydro_z = pos_z.to_plane().slice_mesh(mesh).hydrostatics(&pos_z.to_plane());
+    jacobian.set_column(0, &((Vector3::new(d_hydro_z.volume, d_hydro_z.center_of_buoyancy.x, d_hydro_z.center_of_buoyancy.y) - f_x) / config_delta));
+    let mut pos_rx = current_pos;
+    pos_rx.heel_rx += config_delta;
+    let d_hydro_rx = pos_rx.to_plane().slice_mesh(mesh).hydrostatics(&pos_rx.to_plane());
+    jacobian.set_column(1, &((Vector3::new(d_hydro_rx.volume, d_hydro_rx.center_of_buoyancy.x, d_hydro_rx.center_of_buoyancy.y) - f_x) / config_delta));
+    let mut pos_ry = current_pos;
+    pos_ry.trim_ry += config_delta;
+    let d_hydro_ry = pos_ry.to_plane().slice_mesh(mesh).hydrostatics(&pos_ry.to_plane());
+    jacobian.set_column(2, &((Vector3::new(d_hydro_ry.volume, d_hydro_ry.center_of_buoyancy.x, d_hydro_ry.center_of_buoyancy.y) - f_x) / config_delta));
+    jacobian
+}
+}
+pub use floating_position::*;
+}
 mod hydrostatics {
 use nalgebra::Point3;
 pub struct Hydrostatics {
@@ -100,7 +238,11 @@ impl Plane {
 }
 #[inline(always)]
 fn intersect_edge(a: &Vector, b: &Vector, d_a: f64, d_b: f64) -> Vec3 {
-    let t = d_a / (d_a - d_b);
+    let denom = d_a - d_b;
+    if denom.abs() < 1e-8 {
+        return *a;
+    }
+    let t = d_a / denom;
     a + (b - a) * t
 }
 }
@@ -170,8 +312,14 @@ impl SlicedMesh {
             center_of_buoyancy,
         }
     }
+    pub fn waterline_area(&self) -> f64 {
+        self.waterline_edges.iter()
+            .map(|[a, b]| (a.x * b.y - b.x * a.y))
+            .sum::<f64>().abs() * 0.5
+    }
 }
 }
+pub use floating_position::*;
 pub use sliced_mesh::*;
 pub use plane::*;
 pub use hydrostatics::*;
@@ -236,6 +384,49 @@ fn test_diagonal_slice() {
     assert!(hydro.center_of_buoyancy.x < 0.0);
     assert!(hydro.center_of_buoyancy.z < 0.0);
     assert_approx_eq(hydro.center_of_buoyancy.y, 0.0, 1e-4);
+}
+}
+mod floating_position_test {
+use std::{path::Path, time::Instant};
+use parry3d_f64::{glamx::dvec3, shape::Shape};
+use crate::{load_stl, tools::{FloatingPosition, LoadingCondition, SolverConfig, find_equilibrium}};
+#[test]
+fn basic() {
+    let scale = 0.001f64;
+    for path in ["assets/ark.stl", "assets/Sofiya.stl"] {
+        let mesh = load_stl(Path::new(path)).scaled(dvec3(scale, scale, scale));
+        let aabb = mesh.compute_aabb(&parry3d_f64::glamx::DPose3::identity());
+        let total_height = aabb.maxs.z - aabb.mins.z;
+        let conf = SolverConfig {
+            max_iterations: 20,
+            tolerance: 1e-4,
+            delta: 1e-5,
+        };
+        let loading_condition = LoadingCondition {
+            target_volume: 50.0,
+            target_lcg: (aabb.maxs.x + aabb.mins.x) / 2.0,
+            target_tcg: 0.0,
+        };
+        let initial_guess = FloatingPosition {
+            draft_z: aabb.mins.z + (total_height * 0.4),
+            heel_rx: 0.0,
+            trim_ry: 0.0,
+        };
+        let t = Instant::now();
+        let result = find_equilibrium(
+            &mesh,
+            &loading_condition,
+            initial_guess,
+            &conf,
+        );
+        let elapsed = t.elapsed();
+        println!("\nTest model: {}", path);
+        match result {
+            Ok(pos) => println!("Converged in {:?}\nPosition: Draft={:.4}, Heel={:.4}°, Trim={:.4}°",
+                                elapsed, pos.draft_z, pos.heel_rx.to_degrees(), pos.trim_ry.to_degrees()),
+            Err(e) => println!("Failed: {} (Elapsed: {:?})", e, elapsed),
+        }
+    }
 }
 }
 mod simple_solids {

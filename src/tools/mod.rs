@@ -24,6 +24,7 @@
 //! * Под водой: Срезов нет (`waterline_edges` пуст). Крышка не строится, берется объем всего меша. Всё верно.
 //! 
 //! ---
+mod floating_position;
 mod hydrostatics;
 mod plane;
 mod sliced_mesh;
@@ -31,6 +32,7 @@ mod local_cache;
 mod math;
 
 
+pub use floating_position::*;
 pub use sliced_mesh::*;
 pub use plane::*;
 pub use hydrostatics::*;

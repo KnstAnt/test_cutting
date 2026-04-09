@@ -2,11 +2,12 @@ use parry3d_f64::math::Vec3;
 
 use crate::tools::{Hydrostatics, Plane};
 
+type DVec3 = parry3d_f64::glamx::DVec3;
 ///
 /// Результат сечения солида плоскостью
 pub struct SlicedMesh {
     /// Треугольники, оказавшиеся под плоскостью (полезный объем)
-    pub submerged_triangles: Vec<[Vec3; 3]>,
+    pub submerged_triangles: Vec<[parry3d_f64::glamx::DVec3; 3]>,
     /// Отрезки, формирующие контур сечения (ватерлинию)
     pub waterline_edges: Vec<[Vec3; 2]>,
 }
@@ -45,16 +46,31 @@ impl SlicedMesh {
     /// В основе лежит Теорема о дивергенции (Формула Остроградского-Гаусса)
     pub fn hydrostatics(&self, plane: &Plane) -> Hydrostatics {
         let mut total_volume = 0.0;
-        let mut sum_centroid = Vec3::ZERO;
+        let mut sum_centroid = DVec3::ZERO;
+        // Используем origin плоскости как локальный ноль.
+        // Это гарантирует, что даже если судно в 1000м от начала координат,
+        // расчеты внутри будут оперировать малыми числами.
+        let p_ref_global = parry3d_f64::glamx::DVec3::from(plane.normal * plane.d); 
         // Вспомогательная замыкание (closure) для добавления тетраэдра
         // Использует начало координат (0,0,0) как четвертую вершину
-        let mut add_tetrahedron = |p1: &Vec3, p2: &Vec3, p3: &Vec3| {
-            // Вычисляем знаковый объем тетраэдра (смешанное произведение векторов)
-            let v_i = p1.dot(p2.cross(*p3)) / 6.0;
+        // let mut add_tetrahedron = |p1: &Point3<f64>, p2: &Point3<f64>, p3: &Point3<f64>| {
+        //     // Вычисляем знаковый объем тетраэдра (смешанное произведение векторов)
+        //     let v_i = p1.coords.dot(&p2.coords.cross(&p3.coords)) / 6.0;
+        //     total_volume += v_i;
+        //     // Центр масс самого тетраэдра
+        //     let centroid_i = (p1.coords + p2.coords + p3.coords) / 4.0;
+        //     // Накапливаем взвешенный центр масс
+        //     sum_centroid += centroid_i * v_i;
+        // };
+        let mut add_tetrahedron = |p1: &DVec3, p2: &DVec3, p3: &DVec3| {
+            let v1 = p1 - p_ref_global;
+            let v2 = p2 - p_ref_global;
+            let v3 = p3 - p_ref_global;
+            // Знаковый объем тетраэдра
+            let v_i = v1.dot(v2.cross(v3)) / 6.0;
             total_volume += v_i;
-            // Центр масс самого тетраэдра
-            let centroid_i = (p1 + p2 + p3) / 4.0;
-            // Накапливаем взвешенный центр масс
+            // Центроид тетраэдра (в локальных координатах)
+            let centroid_i = (v1 + v2 + v3) / 4.0;
             sum_centroid += centroid_i * v_i;
         };
         // Шаг 1: Интегрируем родные треугольники корпуса (погруженную часть)
@@ -66,34 +82,43 @@ impl SlicedMesh {
         // Если есть хотя бы одно ребро сечения
         if let Some(first_edge) = self.waterline_edges.first() {
             // Берем любую произвольную точку на плоскости сечения как центр веера
-            let p_ref = first_edge[0]; 
+            let p_fan = first_edge[0]; 
             for edge in &self.waterline_edges {
                 let a = edge[0];
                 let b = edge[1];
-                // Нам нужно, чтобы нормаль крышки смотрела "вверх" (из воды),
-                // то есть совпадала по направлению с нормалью секущей плоскости.
-                // Проверяем направление нормали образованного треугольника:
-                let cross = (a - p_ref).cross(b - p_ref);
-                let is_pointing_out = cross.dot(plane.normal) > 0.0;
+                // Проверка нормали: крышка должна смотреть ПРОТИВ погружения (вверх)
+                // plane.normal обычно смотрит вверх. Проверяем ориентацию треугольника [p_fan, a, b]
+                let cross = (a - p_fan).cross((b - p_fan));
                 // В зависимости от направления векторов, передаем вершины 
                 // так, чтобы соблюдался правильный порядок обхода
-                if is_pointing_out {
-                    add_tetrahedron(&p_ref, &a, &b);
+                if cross.dot(plane.normal) > 0.0 {
+                    add_tetrahedron(&p_fan, &a, &b);
                 } else {
-                    add_tetrahedron(&p_ref, &b, &a);
+                    add_tetrahedron(&p_fan, &b, &a);
                 }
             }
         }
+        // Итоговый объем (берем abs только в конце, чтобы видеть ошибки намотки)
+        let final_volume = total_volume.abs();
         // Итоговый центр величины - это сумма взвешенных центроидов, деленная на общий объем
-        let center_of_buoyancy = if total_volume.abs() > 1e-6 {
-            Vec3::from(sum_centroid / total_volume)
+        let center_of_buoyancy = if final_volume > 1e-9 {
+            // Возвращаем центр из локальных координат в глобальные
+            DVec3::from(p_ref_global + (sum_centroid / total_volume))
         } else {
-            // Защита от деления на ноль (судно полностью в воздухе)
-            Vec3::ZERO
+            DVec3::ZERO
         };
         Hydrostatics {
-            volume: total_volume.abs(),
+            volume: final_volume,
             center_of_buoyancy,
         }
+    }
+    ///
+    /// Расчет площади ватерлинии
+    pub fn waterline_area(&self) -> f64 {
+        // Сумма площадей треугольников "крышки" через векторное произведение
+        // Или просто площадь 2D проекции контура
+        self.waterline_edges.iter()
+            .map(|[a, b]| (a.x * b.y - b.x * a.y))
+            .sum::<f64>().abs() * 0.5
     }
 }
