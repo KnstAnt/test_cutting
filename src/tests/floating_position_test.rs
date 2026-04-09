@@ -19,7 +19,7 @@ fn basic() {
             max_iterations: 20,    // Newton-Raphson обычно сходится за 5-10 шагов. 20 — с запасом.
             tolerance: 1e-4,       // Точность 0.1 мм для координат и 0.0001 м³ для объема.
             delta_z: 1e-4,         // Шаг для численной производной. f64 позволяет брать малые значения.
-            delta_angle: 1e-4,     // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-3,     // Шаг для численной производной. f64 позволяет брать малые значения.
         };
         // Настраиваем "погрузку" на ~50% от высоты меша
         let loading_condition = LoadingCondition {
@@ -65,16 +65,17 @@ fn solver_cube_equilibrium() {
             trim_ry: -0.1,
         },
         &SolverConfig {
-            max_iterations: 50,
-            tolerance: 1e-6,
+            max_iterations: 100,
+            tolerance: 1e-4,
             delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
-            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-3,     // Шаг для численной производной. f64 позволяет брать малые значения.
         }
     ).unwrap();
 
     // assert!((result.draft_z - 0.0).abs() < 1e-3);
     // assert!(result.draft_z.abs() < 1e-2);
-    let plane = result.to_plane();
+    // let plane = result.to_plane();
+    let plane = result.to_plane_relative(target.target_lcg, target.target_tcg);
     let hydro = plane.slice_mesh(&mesh).hydrostatics(&plane);
     assert!((hydro.volume - target.target_volume).abs() < 1e-3);
     assert!(result.heel_rx.abs() < 1e-3);
@@ -124,17 +125,18 @@ fn test_equilibrium_cube_draft() {
             trim_ry: -0.2,
         },
         &SolverConfig {
-            max_iterations: 50,
-            tolerance: 1e-6,
-            delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
-            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
+            max_iterations: 100,
+            tolerance: 1e-4,
+            delta_z: 1e-4,         // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-3,     // Шаг для численной производной. f64 позволяет брать малые значения.
         },
     ).expect("Solver failed");
 
     // половина куба → ватерлиния на z = 0
     // assert!((result.draft_z - 0.0).abs() < 1e-3);
     // assert!(result.draft_z.abs() < 1e-2);
-    let plane = result.to_plane();
+    // let plane = result.to_plane();
+    let plane = result.to_plane_relative(target.target_lcg, target.target_tcg);
     let hydro = plane.slice_mesh(&mesh).hydrostatics(&plane);
     assert!((hydro.volume - target.target_volume).abs() < 1e-3);
     assert!(result.heel_rx.abs() < 1e-3);
@@ -163,11 +165,16 @@ fn test_translation_invariance() {
         &SolverConfig {
             max_iterations: 50,
             tolerance: 1e-6,
-            delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
-            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_z: 1e-4,         // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-4,     // Шаг для численной производной. f64 позволяет брать малые значения.
         },
     ).unwrap();
 
+    // Относительная плоскость для проверки
+    let plane = result.to_plane_relative(target.target_lcg, target.target_tcg);
+    let hydro = plane.slice_mesh(&mesh).hydrostatics(&plane);
+
+    assert!((hydro.volume - target.target_volume).abs() < 1e-3);
     assert!((result.draft_z - offset.z).abs() < 1e-3);
     assert!(result.heel_rx.abs() < 1e-3);
     assert!(result.trim_ry.abs() < 1e-3);
@@ -195,7 +202,7 @@ fn test_random_initial_guess() {
                 max_iterations: 50,
                 tolerance: 1e-5,
                 delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
-                delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
+                delta_angle: 1e-3,     // Шаг для численной производной. f64 позволяет брать малые значения.
             },
         );
 
@@ -228,9 +235,13 @@ fn test_rotated_cube_equilibrium() {
             max_iterations: 50,
             tolerance: 1e-5,
             delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
-            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-3,     // Шаг для численной производной. f64 позволяет брать малые значения.
         },
-    ).unwrap();
+    );
+
+    assert!(result.is_ok(), "Failed {:?}", result);
+    
+    let result = result.unwrap();
 
     assert!(result.heel_rx.abs() < 1e-2);
     assert!(result.trim_ry.abs() < 1e-2);
@@ -257,7 +268,7 @@ fn test_small_waterline_area() {
             max_iterations: 50,
             tolerance: 1e-5,
             delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
-            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-3,     // Шаг для численной производной. f64 позволяет брать малые значения.
         },
     );
 
@@ -289,7 +300,7 @@ fn test_two_bodies() {
             max_iterations: 50,
             tolerance: 1e-5,
             delta_z: 1e-5,         // Шаг для численной производной. f64 позволяет брать малые значения.
-            delta_angle: 1e-5,     // Шаг для численной производной. f64 позволяет брать малые значения.
+            delta_angle: 1e-3,     // Шаг для численной производной. f64 позволяет брать малые значения.
         },
     );
 

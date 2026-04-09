@@ -2,7 +2,7 @@ use nalgebra::{Point3, Vector3};
 use parry3d_f64::math::{Vec3, Vector};
 use parry3d_f64::shape::TriMesh;
 
-use crate::tools::{Hydrostatics, SlicedMesh};
+use crate::tools::SlicedMesh;
 
 /// Секущая плоскость: (n, p) = d
 pub struct Plane {
@@ -112,61 +112,6 @@ impl Plane {
     pub fn signed_distance(&self, p: &Point3<f64>) -> f64 {
         self.normal.dot(&p.coords) - self.d
     }
-    ///
-    /// Continuous hydrostatics (для FloatingPosition)
-    pub fn hydrostatics_continuous(&self, mesh: &TriMesh) -> Hydrostatics {
-        let vertices = mesh.vertices();
-        let indices = mesh.indices();
-    
-        let mut volume = 0.0;
-        let mut centroid = Vector3::zeros();
-    
-        // масштаб сглаживания (ВАЖНО)
-        let eps = estimate_eps(mesh);
-    
-        for tri in indices {
-            let a = to_na_point(&vertices[tri[0] as usize]);
-            let b = to_na_point(&vertices[tri[1] as usize]);
-            let c = to_na_point(&vertices[tri[2] as usize]);
-    
-            let da = self.signed_distance(&a);
-            let db = self.signed_distance(&b);
-            let dc = self.signed_distance(&c);
-    
-            let wa = smooth_heaviside(da, eps);
-            let wb = smooth_heaviside(db, eps);
-            let wc = smooth_heaviside(dc, eps);
-    
-            let w = (wa + wb + wc) / 3.0;
-    
-            if w < 1e-6 {
-                continue;
-            }
-    
-            // signed volume тетраэдра (0, a, b, c)
-            let v = signed_tetra_volume(&a, &b, &c);
-    
-            let v_sub = v * w;
-            volume += v_sub;
-    
-            let tri_centroid = (a.coords + b.coords + c.coords) / 4.0;
-            centroid += tri_centroid * v_sub;
-        }
-    
-        if volume.abs() < 1e-12 {
-            return Hydrostatics {
-                volume: 0.0,
-                center_of_buoyancy: Point3::origin(),
-            };
-        }
-    
-        centroid /= volume;
-    
-        Hydrostatics {
-            volume: volume.abs(),
-            center_of_buoyancy: Point3::from(centroid),
-        }
-    }
 }
 ///
 /// Математика пересечения ребра $V_a V_b$ с плоскостью использует линейную интерполяцию.
@@ -184,40 +129,4 @@ fn intersect_edge(a: &Vector, b: &Vector, d_a: f64, d_b: f64) -> Vec3 {
     let t = d_a / denom;
     // let t = d_a / (d_a - d_b);
     a + (b - a) * t
-}
-///
-/// Smooth Heaviside
-#[inline]
-fn smooth_heaviside(d: f64, eps: f64) -> f64 {
-    if d <= -eps {
-        1.0
-    } else if d >= eps {
-        0.0
-    } else {
-        // линейная аппроксимация — дешево и стабильно
-        0.5 - d / (2.0 * eps)
-    }
-}
-#[inline]
-fn signed_tetra_volume(a: &Point3<f64>, b: &Point3<f64>, c: &Point3<f64>) -> f64 {
-    a.coords.cross(&b.coords).dot(&c.coords) / 6.0
-}
-fn estimate_eps(mesh: &TriMesh) -> f64 {
-    let vertices = mesh.vertices();
-
-    let mut min = vertices[0];
-    let mut max = vertices[0];
-
-    for v in vertices.iter() {
-        min = min.min(*v);  // В glam вместо .inf() и .sup() используются .min() и .max()
-        max = max.max(*v);
-    }
-    // В glam вместо .norm() используется .length()
-    let diag = (max - min).length();
-
-    diag * 1e-3  // 0.1% размера модели
-}
-// Вспомогательная функция для конвертации glam::DVec3 -> nalgebra::Point3
-fn to_na_point(v: &parry3d_f64::glamx::DVec3) -> Point3<f64> {
-    Point3::new(v.x, v.y, v.z)
 }
