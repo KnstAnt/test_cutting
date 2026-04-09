@@ -8,7 +8,7 @@ log = "~0.4"
 
 debugging = { git = "https://github.com/a-givertzman/rust-debuging.git", tag = "0.1.0" }
 
-#nalgebra = "~0.34"
+nalgebra = "~0.34"
 obj = "~0.10"
 stl_io = "~0.10"
 spade = "2.15"

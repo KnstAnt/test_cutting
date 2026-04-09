@@ -105,12 +105,12 @@ impl Plane {
             waterline_edges: waterline_edges.into_iter().map(|vv| vv.map(|v| Vec3::new(v.x, v.y, v.z))).collect(),
         }
     }
-    ///
-    /// Подписанное расстояние до плоскости
-    #[inline]
-    pub fn signed_distance(&self, p: &Point3<f64>) -> f64 {
-        self.normal.dot(&p.coords) - self.d
-    }
+//    ///
+//    /// Подписанное расстояние до плоскости
+//    #[inline]
+//    pub fn signed_distance(&self, p: &Point3<f64>) -> f64 {
+//        self.normal.dot(&p.coords) - self.d
+//    }
 }
 ///
 /// Математика пересечения ребра $V_a V_b$ с плоскостью использует линейную интерполяцию.

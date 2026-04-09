@@ -1,7 +1,9 @@
 use nalgebra::{Matrix3, Point3, Rotation3, Vector3};
-use parry3d_f64::shape::TriMesh;
+use parry3d_f64::{glamx::dvec3, shape::TriMesh};
 
 use crate::tools::{Hydrostatics, Plane};
+
+type DVec3 = parry3d_f64::glamx::DVec3;
 
 ///
 /// Целевые параметры (Дано)
@@ -37,10 +39,18 @@ impl FloatingPosition {
     /// ВАЖНО: Тут мы принимаем точку привязки (обычно LCG/TCG цели),
     /// чтобы вращение происходило вокруг центра тяжести (LCG, TCG) судна, а не вокруг начала координат мира.
     pub fn to_plane_relative(&self, ref_x: f64, ref_y: f64) -> Plane {
-        let rotation = Rotation3::from_euler_angles(self.heel_rx, self.trim_ry, 0.0);
-        let normal = rotation * Vector3::new(0.0, 0.0, 1.0); 
+        // let rotation = Rotation3::from_euler_angles(self.heel_rx, self.trim_ry, 0.0);
+        // 1. Создаем вращение через Эйлеровы углы (в glam порядок углов важен)
+        // nalgebra Rotation3::from_euler_angles(x, y, z) соответствует:
+        let rotation = parry3d_f64::glamx::DQuat::from_euler(
+            parry3d_f64::glamx::EulerRot::XYZ, 
+            self.heel_rx, 
+            self.trim_ry, 
+            0.0
+        );
+        let normal = rotation * DVec3::new(0.0, 0.0, 1.0); 
         // Плоскость проходит через draft_z в точке (ref_x, ref_y)
-        let point_on_plane = Point3::new(ref_x, ref_y, self.draft_z);        
+        let point_on_plane = dvec3(ref_x, ref_y, self.draft_z);        
         Plane::from_point_and_normal(point_on_plane, normal)
     }
 }
