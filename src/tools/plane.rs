@@ -1,9 +1,11 @@
 use parry3d_f64::{math::*, shape::TriMesh};
 use crate::tools::SlicedMesh;
 
+type DVec3 = parry3d_f64::glamx::DVec3;
+
 /// Секущая плоскость: (n, p) = d
 pub struct Plane {
-    pub normal: Vec3,
+    pub normal: DVec3,
     pub d: f64, // Расстояние от начала координат вдоль нормали
 }
 impl Plane {
