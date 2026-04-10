@@ -45,6 +45,20 @@ pub fn test_sofia() {
         center_of_buoyancy
     );
 }
+
+pub fn calculate_hydrostatic(mut mesh: TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> (f64, Vec3) {
+    let center = Vec3::new(dx, 0., 0.);
+    let isometry = position(&center, heel, trim, draught);
+    mesh.transform_vertices(&isometry);
+    let plane = Plane::from_point_and_normal(center, Vec3::new(0., 0., 1.));
+    let sliced_mesh = plane.slice_mesh(&mesh);
+    let hydrostatics = sliced_mesh.hydrostatics(&plane);
+    let center_of_buoyancy = hydrostatics.center_of_buoyancy;
+    let center_of_buoyancy = isometry.inverse_transform_point(center_of_buoyancy);
+    (hydrostatics.volume, center_of_buoyancy)
+}
+
+
 /*
 fn test_sofia() -> usize {
     let scale = 0.001f64;

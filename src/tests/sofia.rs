@@ -1,7 +1,7 @@
 use std::path::Path;
 use parry3d_f64::math::Vec3;
 
-use crate::{calculate_hydrostatic, tools::{DisplacementCache, LocalCache, load_stl}};
+use crate::tools::{DisplacementCache, LocalCache, calculate_hydrostatic, load_stl};
 
 #[test]
 fn sofia() {

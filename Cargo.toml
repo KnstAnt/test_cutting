@@ -10,6 +10,7 @@ stl_io = "~0.10"
 spade = "2.15"
 
 parry3d-f64 = "~0.26"
+rayon = "1.11.0"
 
 #parry3d-f64 = { git = "https://github.com/KnstAnt/parry.git" }
 #baby_shark = "0.3.12"

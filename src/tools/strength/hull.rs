@@ -1,8 +1,7 @@
 use parry3d_f64::{math::Vec3, shape::TriMesh};
 
 use crate::tools::{
-    Slice,
-    strength::{clip_axis, split_by_x},
+    Slice, strength::*,
 };
 
 /// Главный строитель шпаций
@@ -17,74 +16,74 @@ impl HullSlicer {
     }
     /// Рассекает меш на шпации по заданным координатам X
     pub fn slice(&self, x_coords: &[f64]) -> Vec<Slice> {
-        if x_coords.len() < 2 {
-            return Vec::new();
-        }
+        if x_coords.len() < 2 { return Vec::new(); }
 
+        let n_stations = x_coords.len() - 1;
+        
         let vertices = self.mesh.vertices();
         let indices = self.mesh.indices();
+        
+         // 1. Binning: Распределяем индексы треугольников по "корзинам" шпаций
+        let mut grid: Vec<Vec<u32>> = vec![Vec::with_capacity(indices.len() / n_stations); n_stations];
+        
+        for (tri_idx, tri) in indices.iter().enumerate() {
+            let p0 = vertices[tri[0] as usize];
+            let p1 = vertices[tri[1] as usize];
+            let p2 = vertices[tri[2] as usize];
 
-        // Исходные треугольники
-        let mut current_polygons: Vec<Vec<Vec3>> = indices
-            .iter()
-            .map(|tri| {
-                vec![
-                    vertices[tri[0] as usize],
-                    vertices[tri[1] as usize],
-                    vertices[tri[2] as usize],
-                ]
-            })
-            .collect();
+            let t_min = p0.x.min(p1.x).min(p2.x);
+            let t_max = p0.x.max(p1.x).max(p2.x);
 
-        let mut stations = Vec::with_capacity(x_coords.len() - 1);
+            // Бинарный поиск для определения диапазона шпаций
+            let start_idx = match x_coords.binary_search_by(|x| x.partial_cmp(&t_min).unwrap()) {
+                Ok(idx) => idx,
+                Err(idx) => idx.saturating_sub(1),
+            }.min(n_stations - 1);
 
-        for window in x_coords.windows(2) {
-            let x_start = window[0];
-            let x_end = window[1];
+            let end_idx = match x_coords.binary_search_by(|x| x.partial_cmp(&t_max).unwrap()) {
+                Ok(idx) => idx,
+                Err(idx) => idx,
+            }.min(n_stations - 1);
 
-            let mut next_polygons = Vec::with_capacity(current_polygons.len());
-            let mut station_polygons = Vec::with_capacity(current_polygons.len());
+            for i in start_idx..=end_idx {
+                grid[i].push(tri_idx as u32);
+            }
+        }
 
-            for poly in current_polygons {
-                let mut min_x = f64::MAX;
-                let mut max_x = f64::MIN;
+        // 2. Sequential Processing: Нарезка каждой шпации
+        let mut stations = Vec::with_capacity(n_stations);
+        let mut buf_a = [Vec3::ZERO; 16];
+        let mut buf_b = [Vec3::ZERO; 16];
 
-                for p in &poly {
-                    min_x = min_x.min(p.x);
-                    max_x = max_x.max(p.x);
-                }
+        for i in 0..n_stations {
+            let x_s = x_coords[i];
+            let x_e = x_coords[i + 1];
+            let tri_indices = &grid[i];
+            
+            let mut st_points = Vec::with_capacity(tri_indices.len() * 3);
+            let mut st_ranges = Vec::with_capacity(tri_indices.len());
 
-                // Если полигон целиком в текущей шпации
-                if min_x >= x_start && max_x <= x_end {
-                    station_polygons.push(poly);
-                    continue;
-                }
+            for &idx in tri_indices {
+                let tri = indices[idx as usize];
+                let tri_verts = [vertices[tri[0] as usize], vertices[tri[1] as usize], vertices[tri[2] as usize]];
 
-                // Если полигон целиком впереди
-                if min_x >= x_end {
-                    next_polygons.push(poly);
-                    continue;
-                }
+                // Нарезаем треугольник границами X
+                let n1 = clip_axis_to_buffer(&tri_verts, &mut buf_b, 0, x_s, false);
+                if n1 < 3 { continue; }
+                let n2 = clip_axis_to_buffer(&buf_b[..n1], &mut buf_a, 0, x_e, true);
+                if n2 < 3 { continue; }
 
-                // Если полигон пересекает x_end
-                // Режем: то что слева (в шпацию), то что справа (в следующий шаг)
-                let (left_part, right_part) = split_by_x(poly, x_end);
-
-                if !left_part.is_empty() {
-                    station_polygons.push(left_part);
-                }
-                if !right_part.is_empty() {
-                    next_polygons.push(right_part);
-                }
+                let start = st_points.len();
+                st_points.extend_from_slice(&buf_a[..n2]);
+                st_ranges.push(start..st_points.len());
             }
 
             stations.push(Slice {
-                x_start,
-                x_end,
-                polygons: station_polygons,
+                x_start: x_s,
+                x_end: x_e,
+                points: st_points,
+                poly_ranges: st_ranges,
             });
-
-            current_polygons = next_polygons;
         }
         stations
     }

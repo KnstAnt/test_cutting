@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use crate::tools::{Plane, calculate_strength, load_stl, position};
+use crate::tools::{DisplacementCache, LocalCache, Plane, calculate_strength, load_stl, position};
 
 mod tools;
 
@@ -16,9 +16,7 @@ mod tests;
 
 fn main() {
 //    test_sofia();
-    let t = Instant::now();
     test_strength();
-    println!("{:?}", t.elapsed());
 }
 
 
@@ -43,26 +41,20 @@ pub fn test_strength() {
         119.98, 120.72, 121.46, 122.2, 122.94, 123.68, 124.42, 125.16, 125.9, 126.5, 127.1, 127.7,
         128.3, 128.9, 129.5, 130.1, 130.7, 131.3, 131.9, 132.5, 133.1, 133.7, 134.3, 134.9, 135.5,
     ];
-  /*  let draughts: Vec<_> = (1..=14).map(|v| v as f64).collect();
+    let draughts: Vec<_> = (100..=1400).map(|v| (v as f64)*0.01).collect();
+    let t = Instant::now();    
     let result = calculate_strength(mesh, &physical_frames, &draughts);
-    let result: Vec<_> = draughts.iter().zip(result.iter()).collect();
-*/
-    let draughts: Vec<_> = vec![4.];
-    let result = calculate_strength(mesh, &physical_frames, &draughts);
-    let sum: f64 = result.iter().sum();
-    println!("sum:{sum}, values:{:?}", result);
+    let elapsed = t.elapsed();
+    let mut cache = DisplacementCache::new("assets/displacement_cache".into());
+    cache.init();
+    for (draught, result_volume) in &result {
+        let target = cache.get_from_level(0., 0., *draught);
+
+        println!("{:.3} result:{:.3} target:{:.3} delta:{}",
+            draught, result_volume, target.volume, (result_volume-target.volume).abs()
+        );  
+    }
+    println!("{:?}", elapsed);
 }
 
-
-pub fn calculate_hydrostatic(mut mesh: TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> (f64, Vec3) {
-    let center = Vec3::new(dx, 0., 0.);
-    let isometry = position(&center, heel, trim, draught);
-    mesh.transform_vertices(&isometry);
-    let plane = Plane::from_point_and_normal(center, Vec3::new(0., 0., 1.));
-    let sliced_mesh = plane.slice_mesh(&mesh);
-    let hydrostatics = sliced_mesh.hydrostatics(&plane);
-    let center_of_buoyancy = hydrostatics.center_of_buoyancy;
-    let center_of_buoyancy = isometry.inverse_transform_point(center_of_buoyancy);
-    (hydrostatics.volume, center_of_buoyancy)
-}
 
