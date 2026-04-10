@@ -2,6 +2,7 @@ use parry3d_f64::{math::*, shape::TriMesh};
 use crate::tools::SlicedMesh;
 
 type DVec3 = parry3d_f64::glamx::DVec3;
+const EPS: f64 = 1e-6;
 
 /// Секущая плоскость: (n, p) = d
 pub struct Plane {
@@ -13,8 +14,6 @@ impl Plane {
     pub fn from_point_and_normal(point: Vec3, normal: Vec3) -> Self {
         let normal = normal.normalize();
         let d = normal.dot(point);
-        // Считаем скалярное произведение вручную
-        // let d = normal.x * point.x + normal.y * point.y + normal.z * point.z;
         Self { normal, d }
     }
     /// Знаковое расстояние от точки до плоскости
@@ -32,7 +31,7 @@ impl Plane {
         let indices = mesh.indices();
         // Шаг 1: Предварительно вычисляем расстояния для всех вершин.
         // Это отлично векторизуется и предотвращает повторные расчеты для смежных треугольников.
-        let distances: Vec<f64> = vertices.iter().map(|v| self.distance(&Vec3::new(v.x, v.y, v.z))).collect();
+        let distances: Vec<f64> = vertices.iter().map(|point| self.distance(point)).collect();
         let mut submerged_triangles = Vec::with_capacity(indices.len() / 2);
         let mut waterline_edges = Vec::new();
         // Шаг 2: Проходим по всем треугольникам
@@ -50,20 +49,27 @@ impl Plane {
                 (v2, d2),
             ];
             // Считаем, сколько вершин находится "над" водой (положительное расстояние)
-            let above_count = pts.iter().filter(|&&(_, d)| d > 0.0).count();
+            // FIX 1: Epsilon-классификация
+            let signs: Vec<i32> = pts.iter().map(|&(_, d)| classify(d)).collect();
+            let above_count = signs.iter().filter(|&&s| s > 0).count();
+            let on_count = signs.iter().filter(|&&s| s == 0).count();
+            // FIX 2: MVP игнорирование компланарных случаев
+            if on_count > 0 { 
+                continue;
+            }
             match above_count {
                 0 => {
                     // Весь треугольник под водой. Просто копируем.
-                    submerged_triangles.push([Vec3::new(v0.x, v0.y, v0.z), Vec3::new(v1.x, v1.y, v1.z), Vec3::new(v2.x, v2.y, v2.z)]);
+                    submerged_triangles.push([*v0, *v1, *v2]);
                 }
                 3 => {
                     // Весь треугольник над водой. Игнорируем.
                 }
                 1 => {
-                    // 1 вершина над водой, 2 под водой.
+                    // 1 вершина над водой, 2 под водой. Ищем ту, что над водой.
                     // Треугольник обрезается, превращаясь в четырехугольник (2 новых треугольника под водой).
                     // Сдвигаем массив так, чтобы вершина "над водой" (d > 0) оказалась на нулевой позиции (pts[0])
-                    while pts[0].1 <= 0.0 {
+                    while classify(pts[0].1) <= 0 {
                         pts.rotate_left(1);
                     }
                     let top = pts[0].0;
@@ -73,17 +79,20 @@ impl Plane {
                     let i1 = intersect_edge(top, bottom1, pts[0].1, pts[1].1);
                     let i2 = intersect_edge(top, bottom2, pts[0].1, pts[2].1);
                     // Добавляем два новых треугольника, сохраняя порядок обхода (winding order)
-                    submerged_triangles.push([Vec3::new(bottom1.x, bottom1.y, bottom1.z), Vec3::new(bottom2.x, bottom2.y, bottom2.z), Vec3::new(i1.x, i1.y, i1.z)]);
-                    submerged_triangles.push([Vec3::new(bottom2.x, bottom2.y, bottom2.z), Vec3::new(i2.x, i2.y, i2.z), Vec3::new(i1.x, i1.y, i1.z)]);
-                    // submerged_triangles.push([*bottom2, i2, i1]);
+                    submerged_triangles.push([*bottom1, *bottom2, i1]);
+                    submerged_triangles.push([*bottom2, i2, i1]);
                     // Добавляем ребро сечения в контур
-                    waterline_edges.push([i2, i1]);
+                    // FIX 4 & 5: Фильтр длины и правильная ориентация контура
+                    let edge_vec = i1 - i2;
+                    if edge_vec.length() > EPS {
+                        waterline_edges.push([i2, i1]); 
+                    }
                 }
                 2 => {
-                    // 2 вершины над водой, 1 под водой.
+                    // 2 над водой, 1 под водой. Ищем ту, что под водой.
                     // Треугольник обрезается, остаётся 1 маленький треугольник под водой.
                     // Сдвигаем массив так, чтобы вершина "под водой" (d <= 0) оказалась на нулевой позиции (pts[0])
-                    while pts[0].1 > 0.0 {
+                    while classify(pts[0].1) >= 0 {
                         pts.rotate_left(1);
                     }
                     let bottom = pts[0].0;
@@ -93,16 +102,20 @@ impl Plane {
                     let i1 = intersect_edge(bottom, top1, pts[0].1, pts[1].1);
                     let i2 = intersect_edge(bottom, top2, pts[0].1, pts[2].1);
                     // Добавляем новый маленький треугольник
-                    submerged_triangles.push([Vec3::new(bottom.x, bottom.y, bottom.z), Vec3::new(i1.x, i1.y, i1.z), Vec3::new(i2.x, i2.y, i2.z)]);
+                    submerged_triangles.push([*bottom, i1, i2]);
                     // Добавляем ребро сечения в контур
-                    waterline_edges.push([i1, i2]);
+                    // FIX 4 & 5: Фильтр длины и правильная ориентация контура
+                    let edge_vec = i1 - i2;
+                    if edge_vec.length() > EPS {
+                        waterline_edges.push([i1, i2]);
+                    }
                 }
                 _ => unreachable!(),
             }
         }
         SlicedMesh {
-            submerged_triangles, //: submerged_triangles.into_iter().map(|vv| vv.map(|v| Point3::new(v.x, v.y, v.z))).collect(),
-            waterline_edges: waterline_edges.into_iter().map(|vv| vv.map(|v| Vec3::new(v.x, v.y, v.z))).collect(),
+            submerged_triangles,
+            waterline_edges,
         }
     }
 //    ///
@@ -113,6 +126,7 @@ impl Plane {
 //    }
 }
 ///
+/// Безопасный intersect
 /// Математика пересечения ребра $V_a V_b$ с плоскостью использует линейную интерполяцию.
 /// Если $d_a$ и $d_b$ — расстояния от вершин до плоскости, то точка пересечения $I$ вычисляется как:
 /// ```ignore
@@ -120,12 +134,22 @@ impl Plane {
 /// ```
 #[inline(always)]
 fn intersect_edge(a: &Vec3, b: &Vec3, d_a: f64, d_b: f64) -> Vec3 {
-    // Доля пути от 'a' до 'b', где расстояние становится равным 0
     let denom = d_a - d_b;
-    if denom.abs() < 1e-8 {
-        return *a; // Разница слишком мала, точки практически в одном месте
+    if denom.abs() < 1e-12 {
+        return (*a + *b) * 0.5; // лучше midpoint
     }
     let t = d_a / denom;
-    // let t = d_a / (d_a - d_b);
     a + (b - a) * t
+}
+/// 
+/// epsilon классификация
+fn classify(d: f64) -> i32 {
+    if d > EPS { 1 }
+    else if d < -EPS { -1 }
+    else { 0 }
+}
+///
+/// 
+fn sort_edge(a: Vec3, b: Vec3) -> [Vec3; 2] {
+    if a.x < b.x { [a, b] } else { [b, a] }
 }

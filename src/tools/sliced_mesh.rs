@@ -3,11 +3,12 @@ use parry3d_f64::math::Vec3;
 use crate::tools::{Hydrostatics, Plane};
 
 type DVec3 = parry3d_f64::glamx::DVec3;
+
 ///
 /// Результат сечения солида плоскостью
 pub struct SlicedMesh {
     /// Треугольники, оказавшиеся под плоскостью (полезный объем)
-    pub submerged_triangles: Vec<[parry3d_f64::glamx::DVec3; 3]>,
+    pub submerged_triangles: Vec<[DVec3; 3]>,
     /// Отрезки, формирующие контур сечения (ватерлинию)
     pub waterline_edges: Vec<[Vec3; 2]>,
 }
@@ -17,7 +18,7 @@ impl SlicedMesh {
     /// Требует передачи плоскости `Plane` для закрытия "крышки" разреза.
     pub fn volume(&self, plane: &Plane) -> f64 {
         let mut total_volume = 0.0;
-        let mut add_tetrahedron = |p1: &Vec3, p2: &Vec3, p3: &Vec3| {
+        let mut add_tetrahedron = |p1: &DVec3, p2: &DVec3, p3: &DVec3| {
             total_volume += p1.dot(p2.cross(*p3)) / 6.0;
         };
         // 1. Интегрируем погруженные треугольники корпуса
@@ -50,18 +51,8 @@ impl SlicedMesh {
         // Используем origin плоскости как локальный ноль.
         // Это гарантирует, что даже если судно в 1000м от начала координат,
         // расчеты внутри будут оперировать малыми числами.
-        let p_ref_global = parry3d_f64::glamx::DVec3::from(plane.normal * plane.d); 
+        let p_ref_global = plane.normal * plane.d;
         // Вспомогательная замыкание (closure) для добавления тетраэдра
-        // Использует начало координат (0,0,0) как четвертую вершину
-        // let mut add_tetrahedron = |p1: &Point3<f64>, p2: &Point3<f64>, p3: &Point3<f64>| {
-        //     // Вычисляем знаковый объем тетраэдра (смешанное произведение векторов)
-        //     let v_i = p1.coords.dot(&p2.coords.cross(&p3.coords)) / 6.0;
-        //     total_volume += v_i;
-        //     // Центр масс самого тетраэдра
-        //     let centroid_i = (p1.coords + p2.coords + p3.coords) / 4.0;
-        //     // Накапливаем взвешенный центр масс
-        //     sum_centroid += centroid_i * v_i;
-        // };
         let mut add_tetrahedron = |p1: &DVec3, p2: &DVec3, p3: &DVec3| {
             let v1 = p1 - p_ref_global;
             let v2 = p2 - p_ref_global;
@@ -88,7 +79,7 @@ impl SlicedMesh {
                 let b = edge[1];
                 // Проверка нормали: крышка должна смотреть ПРОТИВ погружения (вверх)
                 // plane.normal обычно смотрит вверх. Проверяем ориентацию треугольника [p_fan, a, b]
-                let cross = (a - p_fan).cross((b - p_fan));
+                let cross = (a - p_fan).cross(b - p_fan);
                 // В зависимости от направления векторов, передаем вершины 
                 // так, чтобы соблюдался правильный порядок обхода
                 if cross.dot(plane.normal) > 0.0 {
@@ -103,7 +94,7 @@ impl SlicedMesh {
         // Итоговый центр величины - это сумма взвешенных центроидов, деленная на общий объем
         let center_of_buoyancy = if final_volume > 1e-9 {
             // Возвращаем центр из локальных координат в глобальные
-            DVec3::from(p_ref_global + (sum_centroid / total_volume))
+            p_ref_global + (sum_centroid / total_volume)
         } else {
             DVec3::ZERO
         };
@@ -118,7 +109,7 @@ impl SlicedMesh {
         // Сумма площадей треугольников "крышки" через векторное произведение
         // Или просто площадь 2D проекции контура
         self.waterline_edges.iter()
-            .map(|[a, b]| (a.x * b.y - b.x * a.y))
+            .map(|[a, b]| a.x * b.y - b.x * a.y)
             .sum::<f64>().abs() * 0.5
     }
 }
