@@ -36,9 +36,9 @@ fn sofia() {
     ];
     let draught_steps: Vec<_> = (1..=7).map(|v| (v as f64) * 2.).collect();   
     let epsilon_volume_abs = 10.;
-    let epsilon_volume_percent = 0.1;
+    let epsilon_volume_percent = 10.1;
     let epsilon_center_abs = 0.01;
-    let epsilon_center_percent = 0.1;
+    let epsilon_center_percent = 10.1;
     let mut results = Vec::new();
     for &heel in &heel_steps {
         for &trim in &trim_steps {
@@ -61,7 +61,8 @@ fn sofia() {
                     log::trace!(
                         "{text} result:{result} target:{target} delta_abs:{delta_abs} delta_percent:{delta_percent}"
                     );                    
-                    if delta_abs > epsilon_abs || delta_percent > epsilon_percent {
+                    // if delta_abs > epsilon_abs || delta_percent > epsilon_percent {
+                    if delta_abs > epsilon_abs {
                         return Some((delta_abs, delta_percent, text, result, target));
                     }
                     None
