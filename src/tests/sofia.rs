@@ -9,7 +9,7 @@ fn sofia() {
     let path = "assets/Sofiya.stl";
     let mesh = load_stl(Path::new(path)).scaled(Vec3::new(scale, scale, scale));
     let dx = 65.25;
-    let mut cache = DisplacementCache::new("assets/displacement_cache".into());
+    let mut cache = DisplacementCache::new("assets/displacement_cache_sofia".into());
     cache.init();
   /*  let heel_steps = vec![
         -60., -50., -45., -40., -35., -30., -25., -20., -15., -10., -5., -2., -1., -0.5, -0.2, 0.,

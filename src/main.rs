@@ -22,7 +22,7 @@ fn main() {
 
 pub fn test_strength() {
     let scale = 0.001f64;
-    let path = "assets/Sofiya.stl";
+    let path = "assets/hull.stl";
     let mesh = load_stl(Path::new(path)).scaled(Vec3::new(scale, scale, scale));
     let physical_frames: [f64; 196] = [
         -3.6, -3.0, -2.4, -1.8, -1.2, -0.6, 0.0, 0.6, 1.2, 1.8, 2.4, 3.0, 3.6, 4.2, 4.8, 5.4, 6.0,
@@ -41,11 +41,11 @@ pub fn test_strength() {
         119.98, 120.72, 121.46, 122.2, 122.94, 123.68, 124.42, 125.16, 125.9, 126.5, 127.1, 127.7,
         128.3, 128.9, 129.5, 130.1, 130.7, 131.3, 131.9, 132.5, 133.1, 133.7, 134.3, 134.9, 135.5,
     ];
-    let draughts: Vec<_> = (100..=1400).map(|v| (v as f64)*0.01).collect();
+    let draughts: Vec<_> = (200..=1200).map(|v| (v as f64)*0.01).collect();
     let t = Instant::now();    
     let result = calculate_strength(mesh, &physical_frames, &draughts);
     let elapsed = t.elapsed();
-    let mut cache = DisplacementCache::new("assets/displacement_cache".into());
+    let mut cache = DisplacementCache::new("assets/displacement_cache_hull".into());
     cache.init();
     for (draught, result_volume) in &result {
         let target = cache.get_from_level(0., 0., *draught);
