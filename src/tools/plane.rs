@@ -27,10 +27,11 @@ impl Plane {
     /// что типично для задачи расчета погруженного объема судна.
     /// Также мы соберем отрезки, лежащие на самой секущей плоскости (периметр сечения).
     pub fn slice_mesh(&self, mesh: &TriMesh) -> SlicedMesh {
-        let vertices  = mesh.vertices(); 
         let indices = mesh.indices();
+        let vertices  = mesh.vertices();
         // Шаг 1: Предварительно вычисляем расстояния для всех вершин.
         // Это отлично векторизуется и предотвращает повторные расчеты для смежных треугольников.
+        // Весь float-шум около нуля жестко прибиваем к 0.0
         let distances: Vec<f64> = vertices.iter().map(|point| self.distance(point)).collect();
         let mut submerged_triangles = Vec::with_capacity(indices.len() / 2);
         let mut waterline_edges = Vec::new();
@@ -43,20 +44,16 @@ impl Plane {
             let d1 = distances[face[1] as usize];
             let d2 = distances[face[2] as usize];
             // Собираем вершины и их расстояния в массив для удобной сортировки
+            // СТРОГИЙ SNAPPING (убираем float-шум около нуля)
             let mut pts = [
-                (v0, d0),
-                (v1, d1),
-                (v2, d2),
+                (v0, if d0.abs() < EPS { 0.0 } else { d0 }),
+                (v1, if d1.abs() < EPS { 0.0 } else { d1 }),
+                (v2, if d2.abs() < EPS { 0.0 } else { d2 }),
             ];
             // Считаем, сколько вершин находится "над" водой (положительное расстояние)
-            // FIX 1: Epsilon-классификация
-            let signs: Vec<i32> = pts.iter().map(|&(_, d)| classify(d)).collect();
-            let above_count = signs.iter().filter(|&&s| s > 0).count();
-            let on_count = signs.iter().filter(|&&s| s == 0).count();
-            // FIX 2: MVP игнорирование компланарных случаев
-            if on_count > 0 { 
-                continue;
-            }
+            // СТРОГАЯ БИНАРНАЯ КЛАССИФИКАЦИЯ (Без нулей!)
+            // Если строго больше 0 — над водой. Всё остальное (включая 0) — под водой.
+            let above_count = pts.iter().filter(|&&(_, d)| d > 0.0).count();
             match above_count {
                 0 => {
                     // Весь треугольник под водой. Просто копируем.
@@ -66,10 +63,9 @@ impl Plane {
                     // Весь треугольник над водой. Игнорируем.
                 }
                 1 => {
-                    // 1 вершина над водой, 2 под водой. Ищем ту, что над водой.
+                    // 1 точка над водой. Вращаем, пока pts[0] не станет этой точкой (> 0.0)
                     // Треугольник обрезается, превращаясь в четырехугольник (2 новых треугольника под водой).
-                    // Сдвигаем массив так, чтобы вершина "над водой" (d > 0) оказалась на нулевой позиции (pts[0])
-                    while classify(pts[0].1) <= 0 {
+                    while pts[0].1 <= 0.0 {
                         pts.rotate_left(1);
                     }
                     let top = pts[0].0;
@@ -83,16 +79,14 @@ impl Plane {
                     submerged_triangles.push([*bottom2, i2, i1]);
                     // Добавляем ребро сечения в контур
                     // FIX 4 & 5: Фильтр длины и правильная ориентация контура
-                    let edge_vec = i1 - i2;
-                    if edge_vec.length() > EPS {
+                    if (i1 - i2).length() > EPS {
                         waterline_edges.push([i2, i1]); 
                     }
                 }
                 2 => {
-                    // 2 над водой, 1 под водой. Ищем ту, что под водой.
+                    // 2 точки над водой. Вращаем, пока pts[0] не станет точкой ПОД водой (<= 0.0)
                     // Треугольник обрезается, остаётся 1 маленький треугольник под водой.
-                    // Сдвигаем массив так, чтобы вершина "под водой" (d <= 0) оказалась на нулевой позиции (pts[0])
-                    while classify(pts[0].1) >= 0 {
+                    while pts[0].1 > 0.0 {
                         pts.rotate_left(1);
                     }
                     let bottom = pts[0].0;
@@ -105,8 +99,7 @@ impl Plane {
                     submerged_triangles.push([*bottom, i1, i2]);
                     // Добавляем ребро сечения в контур
                     // FIX 4 & 5: Фильтр длины и правильная ориентация контура
-                    let edge_vec = i1 - i2;
-                    if edge_vec.length() > EPS {
+                    if (i1 - i2).length() > EPS {
                         waterline_edges.push([i1, i2]);
                     }
                 }
@@ -133,7 +126,7 @@ impl Plane {
 /// $$I = V_a + \frac{d_a}{d_a - d_b} (V_b - V_a)$$
 /// ```
 #[inline(always)]
-fn intersect_edge(a: &Vec3, b: &Vec3, d_a: f64, d_b: f64) -> Vec3 {
+fn intersect_edge(a: &DVec3, b: &DVec3, d_a: f64, d_b: f64) -> DVec3 {
     let denom = d_a - d_b;
     if denom.abs() < 1e-12 {
         return (*a + *b) * 0.5; // лучше midpoint
