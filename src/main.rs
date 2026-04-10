@@ -6,17 +6,55 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use crate::tools::{Plane, calculate_strength, load_stl, position};
+
 mod tools;
-use crate::tools::{DisplacementCache, LocalCache, Plane, Position};
+
 
 #[cfg(test)]
 mod tests;
 
 fn main() {
-    test_sofia();
+//    test_sofia();
+    let t = Instant::now();
+    test_strength();
+    println!("{:?}", t.elapsed());
 }
 
-fn calculate(mut mesh: TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> (f64, Vec3) {
+
+pub fn test_strength() {
+    let scale = 0.001f64;
+    let path = "assets/Sofiya.stl";
+    let mesh = load_stl(Path::new(path)).scaled(Vec3::new(scale, scale, scale));
+    let physical_frames: [f64; 196] = [
+        -3.6, -3.0, -2.4, -1.8, -1.2, -0.6, 0.0, 0.6, 1.2, 1.8, 2.4, 3.0, 3.6, 4.2, 4.8, 5.4, 6.0,
+        6.7, 7.4, 8.1, 8.8, 9.5, 10.2, 10.9, 11.6, 12.3, 13.0, 13.7, 14.4, 15.1, 15.8, 16.5, 17.2,
+        17.9, 18.6, 19.34, 20.08, 20.82, 21.56, 22.3, 23.04, 23.78, 24.52, 25.26, 26.0, 26.74,
+        27.48, 28.22, 28.96, 29.7, 30.44, 31.18, 31.92, 32.66, 33.4, 34.14, 34.88, 35.62, 36.36,
+        37.1, 37.84, 38.58, 39.32, 40.06, 40.80, 41.54, 42.28, 43.02, 43.76, 44.5, 45.24, 45.98,
+        46.72, 47.46, 48.2, 48.94, 49.68, 50.42, 51.16, 51.9, 52.64, 53.38, 54.12, 54.86, 55.6,
+        56.34, 57.08, 57.82, 58.56, 59.30, 60.04, 60.78, 61.52, 62.26, 63.0, 63.74, 64.48, 65.22,
+        65.96, 66.7, 67.44, 68.18, 68.92, 69.66, 70.4, 71.14, 71.88, 72.62, 73.36, 74.1, 74.84,
+        75.58, 76.32, 77.06, 77.8, 78.54, 79.28, 80.02, 80.76, 81.5, 82.24, 82.98, 83.72, 84.46,
+        85.2, 85.94, 86.68, 87.42, 88.16, 88.9, 89.64, 90.38, 91.12, 91.86, 92.6, 93.34, 94.08,
+        94.82, 95.56, 96.3, 97.04, 97.78, 98.52, 99.26, 100.0, 100.74, 101.48, 102.22, 102.96,
+        103.7, 104.44, 105.18, 105.92, 106.66, 107.4, 108.14, 108.88, 109.62, 110.36, 111.1,
+        111.84, 112.58, 113.32, 114.06, 114.8, 115.54, 116.28, 117.02, 117.76, 118.5, 119.24,
+        119.98, 120.72, 121.46, 122.2, 122.94, 123.68, 124.42, 125.16, 125.9, 126.5, 127.1, 127.7,
+        128.3, 128.9, 129.5, 130.1, 130.7, 131.3, 131.9, 132.5, 133.1, 133.7, 134.3, 134.9, 135.5,
+    ];
+  /*  let draughts: Vec<_> = (1..=14).map(|v| v as f64).collect();
+    let result = calculate_strength(mesh, &physical_frames, &draughts);
+    let result: Vec<_> = draughts.iter().zip(result.iter()).collect();
+*/
+    let draughts: Vec<_> = vec![4.];
+    let result = calculate_strength(mesh, &physical_frames, &draughts);
+    let sum: f64 = result.iter().sum();
+    println!("sum:{sum}, values:{:?}", result);
+}
+
+
+pub fn calculate_hydrostatic(mut mesh: TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> (f64, Vec3) {
     let center = Vec3::new(dx, 0., 0.);
     let isometry = position(&center, heel, trim, draught);
     mesh.transform_vertices(&isometry);
@@ -28,215 +66,3 @@ fn calculate(mut mesh: TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> 
     (hydrostatics.volume, center_of_buoyancy)
 }
 
-
-fn test_sofia() {
-    let scale = 0.001f64;
-    let path = "assets/Sofiya.stl";
-    let mut mesh = load_stl(Path::new(path)).scaled(Vec3::new(scale, scale, scale));
-    let center = Vec3::new(65.25, 0., 0.);
-    let heel = 20.;
-    let trim = 20.;
-    let draught = 8.;
-    let isometry = position(&center, heel, trim, draught);
-    mesh.transform_vertices(&isometry);
-    //   let (center, normal) = normal(center, heel, trim, dz);
-    let plane = Plane::from_point_and_normal(center, Vec3::new(0., 0., 1.));
-    let sliced_mesh = plane.slice_mesh(&mesh);
-    let hydrostatics = sliced_mesh.hydrostatics(&plane);
-    let center_of_buoyancy = hydrostatics.center_of_buoyancy;
-    let center_of_buoyancy = isometry.inverse_transform_point(center_of_buoyancy);
-    println!(
-        "{} {} {} center:({:.3}, {:.3}, {:.3})  v: {} {}",
-        heel as i32,
-        trim as i32,
-        draught,
-        center.x,
-        center.y,
-        center.z,
-        hydrostatics.volume,
-        center_of_buoyancy
-    );
-}
-/*
-fn test_sofia() -> usize {
-    let scale = 0.001f64;
-    let path = "assets/Sofiya.stl";
-    let mesh = load_stl(Path::new(path)).scaled(&Vec3::new(scale, scale, scale));
-    let mut qnt = 0;
-    //  let heel_steps = vec![-20., -5., -2., 0., 2., 5., 20.];
-    //  let trim_steps = vec![-10., -2., -1., 0., 1., 2., 10.];
-    let center = Vec3::new(65.25, 0., 0.);
-    let heel_steps = vec![-20., 0., 20.];
-    let trim_steps = vec![-20., 0., 20.];
-    for dz in 1..=2 {
-        let dz = (dz * 7 + 1) as f64;
-        for &heel in &heel_steps {
-            for &trim in &trim_steps {
-                let (center, normal) = normal(center, heel, trim, dz);
-                let plane = Plane::from_point_and_normal(center, normal);
-                let sliced_mesh = plane.slice_mesh(&mesh);
-                let hydrostatics = sliced_mesh.hydrostatics(&plane);
-                println!(
-                    "{} {} {} center:({:.3}, {:.3}, {:.3}) normal:({:.3}, {:.3}, {:.3}) v: {} {}",
-                    heel as i32,
-                    trim as i32,
-                    dz,
-                    center.x,
-                    center.y,
-                    center.z,
-                    normal.x,
-                    normal.y,
-                    normal.z,
-                    hydrostatics.volume,
-                    hydrostatics.center_of_buoyancy
-                );
-                qnt += 1;
-            }
-        }
-    }
-    qnt
-}*/
-
-fn load_obj(path: &Path) -> TriMesh {
-    let Obj {
-        data: ObjData {
-            position, objects, ..
-        },
-        ..
-    } = Obj::load(path).unwrap();
-    let vertices = position
-        .iter()
-        .map(|v| Vec3::new(v[0] as f64, v[1] as f64, v[2] as f64))
-        .collect::<Vec<_>>();
-    let indices = objects[0].groups[0]
-        .polys
-        .iter()
-        .map(|p| [p.0[0].0 as u32, p.0[1].0 as u32, p.0[2].0 as u32])
-        .collect::<Vec<_>>();
-    TriMesh::with_flags(vertices, indices, TriMeshFlags::all()).unwrap()
-}
-
-fn load_stl(path: &Path) -> TriMesh {
-    let file = std::fs::File::open(path).unwrap();
-    let mut reader = std::io::BufReader::new(file);
-    let stl = stl_io::read_stl(&mut reader).unwrap();
-    let vertices = stl
-        .vertices
-        .into_iter()
-        .map(|v| Vec3::new(v[0] as f64, v[1] as f64, v[2] as f64))
-        .collect::<Vec<_>>();
-    let indices = stl
-        .faces
-        .into_iter()
-        .map(|f| {
-            [
-                f.vertices[0] as u32,
-                f.vertices[1] as u32,
-                f.vertices[2] as u32,
-            ]
-        })
-        .collect::<Vec<_>>();
-    TriMesh::with_flags(vertices, indices, TriMeshFlags::all()).unwrap()
-}
-
-pub fn write_stl(path: &PathBuf, mesh: &TriMesh) {
-    let (result, empty_normals): (Vec<_>, Vec<_>) = mesh
-        .triangles()
-        .map(|t| (t.normal(), t))
-        .partition(|(n, _)| n.is_some());
-    if !empty_normals.is_empty() {
-        panic!("{}", format!("calculate normal error, path:{:?}", path));
-    }
-    let triangles: Vec<_> = result
-        .into_iter()
-        .map(|(n, t)| {
-            let n = n.unwrap();
-            let normal = stl_io::Vector([n[0] as f32, n[1] as f32, n[2] as f32]);
-            let vertices = [
-                stl_io::Vector([t.a[0] as f32, t.a[1] as f32, t.a[2] as f32]),
-                stl_io::Vector([t.b[0] as f32, t.b[1] as f32, t.b[2] as f32]),
-                stl_io::Vector([t.c[0] as f32, t.c[1] as f32, t.c[2] as f32]),
-            ];
-            stl_io::Triangle { normal, vertices }
-        })
-        .collect();
-    let mut binary_stl = Vec::<u8>::new();
-    stl_io::write_stl(&mut binary_stl, triangles.iter()).unwrap();
-    let mut buffer = std::fs::File::create(&path).unwrap();
-    buffer.write_all(&binary_stl).unwrap();
-}
-
-/*
-pub fn position(center: &Vec3, heel: f64, trim: f64, draught: f64) -> Isometry3<f64> {
-    let heel_rad = -heel.to_radians();
-    let trim_rad = trim.to_radians();
-    let trim_rotation = UnitQuaternion::from_axis_angle(&Vector3::y_axis(), trim_rad);
-    let transformed_x_axis = trim_rotation.transform_vector(&Vector3::x_axis());
-    let transformed_x_axis = UnitVector3::new_normalize(transformed_x_axis);
-    let heel_rotation = UnitQuaternion::from_axis_angle(&transformed_x_axis, heel_rad);
-    let rotation = heel_rotation * trim_rotation;
-    let mut center = center.clone();
-    center.z += draught;
-    let point = rotation.transform_point(&center);
-    let translation = Translation3::new(-point.x, -point.y, -point.z);
-    Isometry::from_parts(translation, rotation)
-}*/
-pub fn position(center: &Vec3, heel: f64, trim: f64, draught: f64) -> Pose3 {
-    let heel_rad = -heel.to_radians();
-    let trim_rad = trim.to_radians();
-
-    // 1. Вращение по дифференту (trim) вокруг оси Y
-    let trim_rotation = DQuat::from_axis_angle(Vec3::Y, trim_rad);
-
-    // 2. Находим трансформированную ось X для крена (heel)
-    let transformed_x_axis = trim_rotation * Vec3::X;
-    
-    // 3. Вращение по крену вокруг новой оси X
-    let heel_rotation = DQuat::from_axis_angle(transformed_x_axis.normalize(), heel_rad);
-    
-    // Итоговое вращение
-    let rotation = heel_rotation * trim_rotation;
-
-    // 4. Смещение центра
-    let mut center_offset = *center;
-    center_offset.z += draught;
-
-    // 5. Вычисляем позицию (в glam вращение точки делается через оператор *)
-    let point = rotation * center_offset;
-
-    // 6. Создаем Isometry (в Parry с фичей glam это структура с полями translation и rotation)
-    Pose3::from_parts(-point, rotation)
-}
-
-/// Расчет нормали по крену и дифференту
-/*
-pub fn normal(heel: f64, trim: f64) -> Vector3<f64> {
-    let heel_rad = heel.to_radians();
-    let trim_rad = -trim.to_radians();
-    let trim_rotation = UnitQuaternion::from_axis_angle(&Vector3::y_axis(), trim_rad);
-    let transformed_x_axis = trim_rotation.transform_vector(&Vector3::x_axis());
-    let transformed_x_axis = UnitVector3::new_normalize(transformed_x_axis);
-    let heel_rotation = UnitQuaternion::from_axis_angle(&transformed_x_axis, heel_rad);
-    let rotation = heel_rotation * trim_rotation;
-    rotation.transform_vector(&Vec3::new(0., 0., 1.))
-}
-*/
-pub fn normal(heel: f64, trim: f64) -> Vec3 {
-    let heel_rad = heel.to_radians();
-    let trim_rad = -trim.to_radians();
-    
-    // 1. Вращение по дифференту вокруг оси Y
-    let trim_rotation = DQuat::from_axis_angle(Vec3::Y, trim_rad);
-    
-    // 2. Получаем трансформированную ось X
-    let transformed_x_axis = trim_rotation * Vec3::X;
-    
-    // 3. Вращение по крену вокруг новой оси X
-    let heel_rotation = DQuat::from_axis_angle(transformed_x_axis.normalize(), heel_rad);
-    
-    // 4. Итоговое вращение
-    let rotation = heel_rotation * trim_rotation;
-    
-    // 5. Трансформируем вектор нормали (Z-up)
-    rotation * Vec3::Z
-}

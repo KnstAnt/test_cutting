@@ -6,6 +6,7 @@ pub struct Plane {
     pub normal: Vec3,
     pub d: f64, // Расстояние от начала координат вдоль нормали
 }
+//
 impl Plane {
     /// Создает плоскость из нормали и точки на плоскости
     pub fn from_point_and_normal(point: Vec3, normal: Vec3) -> Self {

@@ -1,10 +1,7 @@
 use std::path::Path;
 use parry3d_f64::math::Vec3;
 
-use crate::{
-    calculate, load_stl,
-    tools::{DisplacementCache, LocalCache},
-};
+use crate::{calculate_hydrostatic, tools::{DisplacementCache, LocalCache, load_stl}};
 
 #[test]
 fn sofia() {
@@ -39,7 +36,7 @@ fn sofia() {
         for &trim in &trim_steps {
             for &draught in &draught_steps {
                 let (result_volume, result_center) =
-                    calculate(mesh.clone(), dx, heel, trim, draught);
+                    calculate_hydrostatic(mesh.clone(), dx, heel, trim, draught);
                 let target = cache.get_from_level(heel, trim, draught);
                 let check = |text: String,
                              result: f64,
