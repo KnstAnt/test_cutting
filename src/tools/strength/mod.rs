@@ -2,23 +2,10 @@ mod hull;
 mod slice;
 pub use hull::*;
 pub use slice::*;
-
-use crate::tools::load_stl;
 use parry3d_f64::{math::Vec3, shape::TriMesh};
-use std::ops::Range;
-use std::path::Path;
 
-type Poly8 = ([Vec3; 8], usize);
-
-pub fn calculate_strength(mesh: TriMesh, frames: &[f64], draughts: &[f64]) -> Vec<(f64, f64)> {
-    let hull = HullSlicer::new(mesh);
-    let slices = hull.slice(frames);
-
-    let displacements: Vec<_> = slices
-        .iter()
-        .map(|s| s.calculate_displacements(draughts))
-        .collect();
-
+pub fn calculate_strength_full(mesh: TriMesh, frames: &[f64], draughts: &[f64]) -> Vec<(f64, f64)> {
+    let displacements = calculate_strength_bounded(mesh, frames, draughts);
     let res: Vec<_> = draughts
         .into_iter()
         .enumerate()
@@ -29,6 +16,15 @@ pub fn calculate_strength(mesh: TriMesh, frames: &[f64], draughts: &[f64]) -> Ve
             ))
         .collect();
     res
+}
+
+pub fn calculate_strength_bounded(mesh: TriMesh, frames: &[f64], draughts: &[f64]) -> Vec<Vec<(f64, f64)>> {
+    let hull = HullSlicer::new(mesh);
+    let slices = hull.slice(frames);
+    slices
+        .iter()
+        .map(|s| s.calculate_displacements(draughts))
+        .collect()
 }
 
 #[inline(always)]

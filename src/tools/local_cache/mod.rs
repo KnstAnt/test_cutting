@@ -1,10 +1,13 @@
 mod cache;
 mod file_io;
 mod displacement_cache;
+mod displacement_bound_cache;
 
 use cache::*;
 pub use displacement_cache::*;
+pub use displacement_bound_cache::*;
 use file_io::*;
+use sal_core::{dbg::Dbg, error::Error};
 use std::path::PathBuf;
 
 ///
@@ -39,26 +42,33 @@ pub trait LocalCache {
 //
 //
 pub(crate) trait LocalCache {
+    fn dbg(&self) -> &Dbg;
+
     fn cache_path(&self) -> PathBuf;
 
     fn cache(&self) -> Option<&Cache<f64>>;
 
     fn set_cache(&mut self, cache: Cache<f64>);
-    ///
     /// Returns approximated values based on given set.
-    fn get(&self, approx_vals: &[f64]) -> Vec<f64> {
-        self
+    fn get(&self, approx_vals: &[f64]) -> Result<Vec<f64>, Error> {
+        let error = Error::new(self.dbg(), "get");
+        Ok(self
             .cache()
             .as_ref()
-            .unwrap()
-            .get(approx_vals)
+            .ok_or(error.pass("no cache"))?
+            .get(approx_vals))
     }
     /// инициализация кэша заранее посчитанными данными
-    fn init(&mut self) {
-        let vals = read( &self.cache_path());
-        let cache = Cache::new();
-        cache.init(vals);
+    fn init(&mut self) -> Result<(), Error> {
+        let error = Error::new(self.dbg(), "init");
+        let vals = read(self.dbg(), &self.cache_path())
+            .map_err(|err| error.pass_with("read cache data error".to_string(), err))?;
+        let cache = Cache::new(self.dbg());
+        cache
+            .init(vals)
+            .map_err(|err| error.pass_with("cache.init error", err))?;
         self.set_cache(cache);
+        Ok(())
     }
 }
 
@@ -66,6 +76,7 @@ pub(crate) trait LocalCache {
 /// На входе параметры без уровня, уровень подбирается к объему.
 /// Уровень должен быть последним ключем и не входить в query.
 pub fn get_from_volume(
+    parent: &Dbg,
     cache: &Cache<f64>,
     query: &[f64],
     volume: f64,
@@ -73,14 +84,15 @@ pub fn get_from_volume(
     volume_max: Option<f64>,
     volume_index: usize,
     epsilon: f64,
-) -> (f64, Vec<f64>) {
+) -> Result<(f64, Vec<f64>), Error> {
+    let error = Error::new(parent, "get_from_volume");
     /*  println!(
         "{} get_from_volume start, query:{:?} volume:{volume} target_index:{volume_index}",
         parent, query,
     );*/
     let volume_max = volume_max
         .or_else(|| Some(cache.disp(volume_index).1))
-        .unwrap();
+        .ok_or(error.err("no volume_max"))?;
     let (mut level, mut result) = if volume <= 0. {
         // целевое значение на нижней границе диапазона, сразу берем значение
         let (level_min, _) = cache.disp(query.len());
@@ -89,9 +101,9 @@ pub fn get_from_volume(
         let result = cache
             .values_disp(&query)
             .first()
-            .unwrap()
+            .ok_or(error.err("no result!".to_string()))?
             .to_vec();
-        (0.0_f64, result)
+        (0., result)
     } else if volume >= volume_max {
         // целевое значение на верхней границе диапазона, сразу берем значение
         let (_, level_max) = cache.disp(query.len());
@@ -100,7 +112,7 @@ pub fn get_from_volume(
         let result = cache
             .values_disp(&query)
             .first()
-            .unwrap()
+            .ok_or(error.err("no result!".to_string()))?
             .to_vec();
         (level_max, result)
     } else {
@@ -136,26 +148,28 @@ pub fn get_from_volume(
     if let Some(level_max) = level_max {
         level = level.max(0.).min(level_max);
     }
-    (level.max(0.), result)
+    Ok((level.max(0.), result))
 }
 
 /// Получение значения из кэша для заданных условий и объема.
 /// На входе параметры без уровня, уровень подбирается к объему.
 /// Уровень должен быть последним ключем и не входить в query.
 pub fn get_from_level(
+    parent: &Dbg,
     cache: &Cache<f64>,
     query: &[f64],
     level: f64,
     volume_max: Option<f64>,
     volume_index: usize,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, Error> {
+    let error = Error::new(parent, "get_from_level");
     /*  println!(
         "{} get_from_level start, query:{:?} volume:{volume} target_index:{volume_index}",
         parent, query,
     );*/
     let volume_max = volume_max
         .or_else(|| Some(cache.disp(volume_index).1))
-        .unwrap();
+        .ok_or(error.err("no volume_max"))?;
     let (level_min, level_max) = cache.disp(query.len());
     //   dbg!(level_min, level_max, volume_min, volume_max);
     let mut result = if level <= level_min {
@@ -165,7 +179,7 @@ pub fn get_from_level(
         cache
             .values_disp(&query)
             .first()
-            .unwrap()
+            .ok_or(error.err("no result!".to_string()))?
             .to_vec()
     } else if level >= level_max {
         // целевое значение на верхней границе диапазона, сразу берем значение
@@ -174,7 +188,7 @@ pub fn get_from_level(
         cache
             .values_disp(&query)
             .first()
-            .unwrap()
+            .ok_or(error.err("no result!".to_string()))?
             .to_vec()
     } else {
         let mut query: Vec<_> = query.to_vec();
@@ -184,5 +198,6 @@ pub fn get_from_level(
     // при крене/дифференте объем и уровень могут быть отрицательными для заданного уровня
     // но для расчета это не имеет смысла, обнуляем в таком случае
     result[volume_index] = result[volume_index].max(0.).min(volume_max);
-    result
+    Ok(result)
 }
+

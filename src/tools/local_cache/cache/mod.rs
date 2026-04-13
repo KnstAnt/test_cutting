@@ -4,7 +4,8 @@
 //! This implemetation can be used either directly or
 //! be taken to create a more specific cache structure.
 //
-use std::{error::Error, num::ParseFloatError, str::FromStr, sync::OnceLock};
+use sal_core::{dbg::Dbg, error::Error};
+use std::{num::ParseFloatError, str::FromStr, sync::OnceLock};
 ///
 /// Cached dataset lazyly read from the file on the first access.
 ///
@@ -22,6 +23,7 @@ use std::{error::Error, num::ParseFloatError, str::FromStr, sync::OnceLock};
 /// let _ = cache.get(&[Some(2.0)]);
 /// ```
 pub struct Cache<T> {
+    dbg: Dbg,
     //таблица данных
     table: OnceLock<Vec<Vec<T>>>,
     //отсортированные вектора ключей, заполняются из таблицы при инициализации
@@ -35,8 +37,9 @@ impl<T> Cache<T> {
     ///
     /// Note that this call doesn't read the file yet.
     /// The first access (see [Cache::get]) causes file reading.
-    pub fn new() -> Self {
+    pub fn new(parent: &Dbg) -> Self {
         Self {
+            dbg: Dbg::new(parent, "Cache"),
             table: OnceLock::new(),
             keys: OnceLock::new(),
         }
@@ -52,7 +55,7 @@ impl<T: PartialOrd> Cache<T> {
     /// Panic occurs if the reader produces a non-comparable value (e. g. _NaN_).
     /// qnt_keys >= vals len
     /// vals len < 2
-    pub fn init(&self, vals: Vec<Vec<T>>)
+    pub fn init(&self, vals: Vec<Vec<T>>) -> Result<(), Error>
     where
         T: FromStr<Err = ParseFloatError> + Clone + Default + std::fmt::Display,
     {
@@ -67,10 +70,13 @@ impl<T: PartialOrd> Cache<T> {
                 data
             })
             .collect();
-        let _ = self.table
-            .set(vals.clone());
-        let _ = self.keys
-            .set(keys);
+        self.table
+            .set(vals.clone())
+            .map_err(|_| Error::new("Cache", "init").err("table.set error: already set"))?;
+        self.keys
+            .set(keys)
+            .map_err(|_| Error::new("Cache", "init").err("keys.set error: already set"))?;
+        Ok(())
     }
 }
 //
@@ -127,11 +133,11 @@ impl Cache<f64> {
         let data = self
             .table
             .get()
-            .unwrap_or_else(|| panic!("{} | Error: no table!", "get"));
+            .unwrap_or_else(|| panic!("{}.{} | Error: no table!", self.dbg, "get"));
         let keys = self
             .keys
             .get()
-            .unwrap_or_else(|| panic!("{} | Error: no keys!", "get"));
+            .unwrap_or_else(|| panic!("{}.{} | Error: no keys!", self.dbg, "get"));
         // пары значений для каждого индекса, между которыми попадает ключ
         let pairs: Vec<_> = query
             .iter()
@@ -263,12 +269,12 @@ impl Cache<f64> {
     /// Возвращает Vec<(value from index1, value from index2)>
     pub fn values_disp(&self, query: &[Option<f64>]) -> Vec<Vec<f64>> {
         let data = self.table.get().unwrap_or_else(|| {
-            panic!("{} | Cache error: no table!",  "value_disp_opt")
+            panic!("{}.{} | Cache error: no table!", self.dbg, "value_disp_opt")
         });
         let keys = self
             .keys
             .get()
-            .unwrap_or_else(|| panic!("{} | Error: no keys!", "get"));
+            .unwrap_or_else(|| panic!("{}.{} | Error: no keys!", self.dbg, "get"));
         assert!(
             data[0].len() > query.len(),
             "{}",
@@ -317,7 +323,8 @@ impl Cache<f64> {
     pub fn disp(&self, index: usize) -> (f64, f64) {
         let keys = self.keys.get().unwrap_or_else(|| {
             panic!(
-                "{} | Cache error: no keys! index:{index}", "max_key"
+                "{}.{} | Cache error: no keys! index:{index}",
+                self.dbg, "max_key"
             )
         });
         assert!(keys.len() > index);

@@ -2,11 +2,12 @@ use obj::{Obj, ObjData};
 use parry3d_f64::glamx::DQuat;
 use parry3d_f64::math::*;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
+use sal_core::dbg::Dbg;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use crate::tools::{DisplacementCache, LocalCache, Plane, calculate_strength, load_stl, position};
+use crate::tools::{DisplacementCache, LocalCache, Plane, calculate_strength_full, load_stl, position};
 
 mod tools;
 
@@ -23,6 +24,7 @@ fn main() {
 pub fn test_strength() {
     let scale = 0.001f64;
     let path = "assets/hull.stl";
+    let dbg = Dbg::new("main", "test_strength");
     let mesh = load_stl(Path::new(path)).scaled(Vec3::new(scale, scale, scale));
     let physical_frames: [f64; 196] = [
         -3.6, -3.0, -2.4, -1.8, -1.2, -0.6, 0.0, 0.6, 1.2, 1.8, 2.4, 3.0, 3.6, 4.2, 4.8, 5.4, 6.0,
@@ -43,9 +45,9 @@ pub fn test_strength() {
     ];
     let draughts: Vec<_> = (200..=1200).map(|v| (v as f64)*0.01).collect();
     let t = Instant::now();    
-    let result = calculate_strength(mesh, &physical_frames, &draughts);
+    let result = calculate_strength_full(mesh, &physical_frames, &draughts);
     let elapsed = t.elapsed();
-    let mut cache = DisplacementCache::new("assets/displacement_cache_hull".into());
+    let mut cache = DisplacementCache::new(&dbg, "assets/displacement_cache_hull".into());
     cache.init();
     for (draught, result_volume) in &result {
         let target = cache.get_from_level(0., 0., *draught);

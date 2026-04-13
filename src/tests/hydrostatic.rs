@@ -1,17 +1,19 @@
-use std::path::Path;
 use parry3d_f64::math::Vec3;
+use sal_core::dbg::Dbg;
+use std::path::Path;
 
 use crate::tools::{DisplacementCache, LocalCache, calculate_hydrostatic, load_stl};
 
 #[test]
-fn sofia() {
+fn hydrostatic_sofia() {
+    let dbg = Dbg::new("test", "hydrostatic_sofia");
     let scale = 0.001f64;
-    let path = "assets/Sofiya.stl";
+    let path = "assets/hull.stl";
     let mesh = load_stl(Path::new(path)).scaled(Vec3::new(scale, scale, scale));
     let dx = 65.25;
-    let mut cache = DisplacementCache::new("assets/displacement_cache_sofia".into());
-    cache.init();
-  /*  let heel_steps = vec![
+    let mut cache = DisplacementCache::new(&dbg, "assets/displacement_cache_hull".into());
+    dbg!(cache.init().unwrap());
+    /*  let heel_steps = vec![
         -60., -50., -45., -40., -35., -30., -25., -20., -15., -10., -5., -2., -1., -0.5, -0.2, 0.,
         0.2, 0.5, 1., 2., 5., 10., 15., 20., 25., 30., 35., 40., 45., 50., 60.,
     ];
@@ -26,7 +28,7 @@ fn sofia() {
     let trim_steps = vec![
         -40., -20., -10., -5., -2., -1., 0., 1., 2., 5., 10., 20., 40.,
     ];
-    let draught_steps: Vec<_> = (1..=7).map(|v| (v as f64) * 2.).collect();   
+    let draught_steps: Vec<_> = (1..=7).map(|v| (v as f64) * 2.).collect();
     let epsilon_volume_abs = 10.;
     let epsilon_volume_percent = 0.1;
     let epsilon_center_abs = 0.01;
@@ -52,7 +54,7 @@ fn sofia() {
                     };
                     println!(
                         "{text} result:{result} target:{target} delta_abs:{delta_abs} delta_percent:{delta_percent}"
-                    );                    
+                    );
                     if delta_abs > epsilon_abs && delta_percent > epsilon_percent {
                         return Some((delta_abs, delta_percent, text, result, target));
                     }
@@ -94,7 +96,7 @@ fn sofia() {
         }
     }
     results.sort_by(|a, b| (a.1).partial_cmp(&b.1).unwrap());
-  //  let _ = results.split_off(100);
+    //  let _ = results.split_off(100);
     for v in results {
         println!(
             "{} error: result:{} target:{} delta_abs:{} delta_percent:{}",

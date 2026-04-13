@@ -1,2 +1,3 @@
 mod simple_solids;
-mod sofia;
+mod hydrostatic;
+mod strength;

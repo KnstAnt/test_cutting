@@ -1,8 +1,10 @@
 use std::{
     fs::File,
-    io::{BufRead, BufReader, Error, Write},
+    io::{BufRead, BufReader, Write},
     path::PathBuf,
 };
+
+use sal_core::{dbg::Dbg, error::Error};
 
 
 ///
@@ -10,33 +12,49 @@ use std::{
 ///
 /// # Panics
 /// Panic occurs if the reader produces a non-comparable value (e. g. _NaN_).
-pub fn read(cache_path: &PathBuf) -> Vec<Vec<f64>> {
-    let parent_dir = cache_path.parent().unwrap();
-    std::fs::create_dir_all(parent_dir).unwrap();
+pub fn read(dbg: &Dbg, cache_path: &PathBuf) -> Result<Vec<Vec<f64>>, Error> {
     let callee = "read_from_file";
-    let file = File::open(cache_path).unwrap();
+    let file = File::open(cache_path).map_err(|err| {
+        format!(
+            "{}.{} | Failed reading file='{}': {}",
+            dbg,
+            callee,
+            cache_path.display(),
+            err
+        )
+    })?;
     let reader = BufReader::new(file);
     let mut vals = Vec::new();
     for (try_line, line_id) in reader.lines().zip(1..) {
         let mut v = Vec::new();
-        let line = try_line.unwrap();
+        let line = try_line.map_err(|err| {
+            format!(
+                "{}.{} | Failed reading line={}: {}",
+                dbg, callee, line_id, err
+            )
+        })?;
         let ss = line.split_ascii_whitespace();
         for s in ss {
-            let val = s.parse().unwrap();
+            let val = s.parse().map_err(|err| {
+                format!(
+                    "{}.{} | Failed parsing value at line={}: {}",
+                    dbg, callee, line_id, err
+                )
+            })?;
             v.push(val);
         }
         vals.push(v);
     }
     let size = vals
         .first()
-        .unwrap()
+        .ok_or(format!("{}.{} | Error: no vals", dbg, callee,))?
         .len();
     for v in &vals {
         if v.len() != size {
-            panic!("{} | Error: no vals", callee);
+            return Err(format!("{}.{} | Error: no vals", dbg, callee,).into());
         }
     }
-    vals
+    Ok(vals)
 }
 ///
 pub fn save( cache_path: &PathBuf, vals: Vec<Vec<f64>>) -> Result<(), Error> {
