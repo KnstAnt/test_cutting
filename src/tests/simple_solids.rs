@@ -1,7 +1,5 @@
 use std::time::Instant;
-
-use nalgebra::{ComplexField, Point3, Vector3};
-use parry3d_f64::{glamx::{Vec3, dvec3}, shape::{Cuboid, TriMesh}};
+use parry3d_f64::{math::*, shape::{Cuboid, TriMesh}};
 
 use crate::tools::{Plane, SlicedMesh};
 
@@ -9,21 +7,21 @@ use crate::tools::{Plane, SlicedMesh};
 #[test]
 fn test_cuboid_volume() {
     // 1. Куб 2x2x2 (объем = 8.0)
-    let cuboid = Cuboid::new(dvec3(1.0, 1.0, 1.0));
+    let cuboid = Cuboid::new(Vec3::new(1.0, 1.0, 1.0));
     let (v, i) = cuboid.to_trimesh();
     let mesh = TriMesh::new(v, i).unwrap();
 
     // 2. Сечем ровно пополам (Z = 0)
-    let plane = Plane::from_point_and_normal(Point3::origin(), Vector3::z());
+    let plane = Plane::from_point_and_normal(Vec3::ZERO, Vec3::Z);
     let mut result = plane.slice_mesh(&mesh);
 
     // 3. Чтобы объем был верным, нужно закрыть "дырку" на срезе (Waterline)
     // Для простого куба и плоскости Z=0 срез — это квадрат с вершинами в (+-1, +-1, 0)
     // В общем случае тут нужна триангуляция многоугольника, но для теста добавим крышку вручную:
-    let p1 = Point3::new(-1.0, -1.0, 0.0);
-    let p2 = Point3::new(1.0, -1.0, 0.0);
-    let p3 = Point3::new(1.0, 1.0, 0.0);
-    let p4 = Point3::new(-1.0, 1.0, 0.0);
+    let p1 = Vec3::new(-1.0, -1.0, 0.0);
+    let p2 = Vec3::new(1.0, -1.0, 0.0);
+    let p3 = Vec3::new(1.0, 1.0, 0.0);
+    let p4 = Vec3::new(-1.0, 1.0, 0.0);
     
     // Добавляем два треугольника крышки (нормалью вверх)
     result.submerged_triangles.push([p1, p3, p2]);
@@ -45,8 +43,8 @@ fn test_volume() {
         // Находим самую высокую точку меша
         let max_z = scene.mesh.vertices().iter().map(|v| v.z).fold(f64::NEG_INFINITY, f64::max);
         let high_plane = Plane::from_point_and_normal(
-            Point3::new(0.0, 0.0, max_z + 1.0), 
-            Vector3::z()
+            Vec3::new(0.0, 0.0, max_z + 1.0), 
+            Vec3::Z
         );
         let sliced_full = high_plane.slice_mesh(&scene.mesh);
         let vol_full = sliced_full.volume(&high_plane);
@@ -84,8 +82,8 @@ fn test_hydrostatics() {
         {
             let max_z = scene.mesh.vertices().iter().map(|v| v.z).fold(f64::NEG_INFINITY, f64::max);
             let plane = Plane::from_point_and_normal(
-                Point3::new(0.0, 0.0, max_z + 1.0), 
-                Vector3::z()
+                Vec3::new(0.0, 0.0, max_z + 1.0), 
+                Vec3::Z
             );
             let sliced_full = plane.slice_mesh(&scene.mesh);
             let result = sliced_full.hydrostatics(&plane).volume;
@@ -122,7 +120,7 @@ fn cap_and_get_volume(sliced: &SlicedMesh, plane: &Plane) -> f64 {
     // Это гарантирует, что "крышка" будет иметь нулевой вклад в объем 
     // относительно плоскости, и мы получим чистый объем под ней.
     let anchor = plane.normal * plane.d; // Точка проекции начала координат на плоскость
-    let anchor_p = Point3::from_slice(&[anchor.x, anchor.y, anchor.z]);
+    let anchor_p = Vec3::from_slice(&[anchor.x, anchor.y, anchor.z]);
 
     let mut total_volume = 0.0;
 
@@ -132,7 +130,7 @@ fn cap_and_get_volume(sliced: &SlicedMesh, plane: &Plane) -> f64 {
         let v1 = p1 - anchor_p;
         let v2 = p2 - anchor_p;
         let v3 = p3 - anchor_p;
-        total_volume += v1.dot(&v2.cross(&v3)) / 6.0;
+        total_volume += v1.dot(v2.cross(v3)) / 6.0;
     }
 
     // 2. Объем крышки (если использовать anchor_p как центр веера, 
@@ -153,17 +151,17 @@ fn test_planes(mesh: &TriMesh) -> Vec<(Plane, f64)> {
     return vec![
         // --- ГРАНИЧНЫЕ СЛУЧАИ ---
         // Чуть-чуть ВЫШЕ нижней грани (почти 0 объема)
-        (Plane::from_point_and_normal(Point3::new(center.x, center.y, aabb.mins.z + 1e-4), Vector3::z()), 0.0),
+        (Plane::from_point_and_normal(Vec3::new(center.x, center.y, aabb.mins.z + 1e-4), Vec3::Z), 0.0),
         // Чуть-чуть НИЖЕ верхней грани (почти 100% объема)
-        (Plane::from_point_and_normal(Point3::new(center.x, center.y, aabb.maxs.z - 1e-4), Vector3::z()), 1.0),
+        (Plane::from_point_and_normal(Vec3::new(center.x, center.y, aabb.maxs.z - 1e-4), Vec3::Z), 1.0),
         // Гарантированно ВЫШЕ всей фигуры
-        (Plane::from_point_and_normal(Point3::new(center.x, center.y, aabb.maxs.z + 1.0), Vector3::z()), 1.0),
+        (Plane::from_point_and_normal(Vec3::new(center.x, center.y, aabb.maxs.z + 1.0), Vec3::Z), 1.0),
         // --- СЛОЖНЫЕ УГЛЫ (через центр) ---
-        (Plane::from_point_and_normal(Point3::from_slice(&[center.x, center.y, center.z]), Vector3::new(1.0, 1.0, 1.0).normalize()), 0.5),
-        (Plane::from_point_and_normal(Point3::from_slice(&[center.x, center.y, center.z]), Vector3::new(0.001, 0.001, 1.0).normalize()), 0.5),
-        (Plane::from_point_and_normal(Point3::from_slice(&[center.x, center.y, center.z]), Vector3::new(0.3, 0.5, 0.8).normalize()), 0.5),
+        (Plane::from_point_and_normal(Vec3::from_slice(&[center.x, center.y, center.z]), Vector3::new(1.0, 1.0, 1.0).normalize()), 0.5),
+        (Plane::from_point_and_normal(Vec3::from_slice(&[center.x, center.y, center.z]), Vector3::new(0.001, 0.001, 1.0).normalize()), 0.5),
+        (Plane::from_point_and_normal(Vec3::from_slice(&[center.x, center.y, center.z]), Vector3::new(0.3, 0.5, 0.8).normalize()), 0.5),
         // Плоскость, наклоненная
-        (Plane::from_point_and_normal(Point3::new(center.x, center.y, center.z), Vector3::new(0.3, 0.5, 0.8).normalize()), 0.5),
+        (Plane::from_point_and_normal(Vec3::new(center.x, center.y, center.z), Vector3::new(0.3, 0.5, 0.8).normalize()), 0.5),
     ]
 }
 
@@ -179,9 +177,9 @@ struct TestScene {
 fn test_scenes() -> Vec<TestScene> {
     vec![
         // 1. Единичный куб
-        create_box(2.0, 2.0, 2.0, dvec3(0.0, 0.0, 0.0), "Simple Cube"),
+        create_box(2.0, 2.0, 2.0, Vec3::new(0.0, 0.0, 0.0), "Simple Cube"),
         // 1. Единичный куб, смещенный (проверка инвариантности к позиции)
-        create_box(1.0, 1.0, 1.0, dvec3(10.0, 10.0, 10.0), "Simple Offset Cube"),
+        create_box(1.0, 1.0, 1.0, Vec3::new(10.0, 10.0, 10.0), "Simple Offset Cube"),
         // 2. Длинная тонкая пластина (проверка численной точности на узких гранях)
         create_box(10.0, 0.01, 10.0, parry3d_f64::glamx::DVec3::ZERO, "Thin Plate"),
         // 3. Г-образная фигура (первая вогнутость)
@@ -209,7 +207,7 @@ fn test_scenes() -> Vec<TestScene> {
 // --- Вспомогательные функции для генерации (примеры реализации) ---
 
 fn create_box(hx: f64, hy: f64, hz: f64, offset: parry3d_f64::glamx::DVec3, desc: &'static str) -> TestScene {
-    let (v, i) = Cuboid::new(dvec3(hx/2.0, hy/2.0, hz/2.0)).to_trimesh();
+    let (v, i) = Cuboid::new(Vec3::new(hx/2.0, hy/2.0, hz/2.0)).to_trimesh();
     let v_offset = v.into_iter().map(|p| p + offset).collect();
     TestScene {
         mesh: TriMesh::new(v_offset, i).unwrap(),
@@ -220,14 +218,14 @@ fn create_box(hx: f64, hy: f64, hz: f64, offset: parry3d_f64::glamx::DVec3, desc
 
 fn create_l_shape(desc: &'static str) -> TestScene {
     // Создаем два куба 1x1x1 (половины граней = 0.5)
-    let (mut v1, mut i1) = Cuboid::new(dvec3(0.5, 0.5, 0.5)).to_trimesh();
-    let (v2, i2) = Cuboid::new(dvec3(0.5, 0.5, 0.5)).to_trimesh();
+    let (mut v1, mut i1) = Cuboid::new(Vec3::new(0.5, 0.5, 0.5)).to_trimesh();
+    let (v2, i2) = Cuboid::new(Vec3::new(0.5, 0.5, 0.5)).to_trimesh();
 
     let vertex_offset = v1.len() as u32; // Для стандартного куба это 8
 
     // 1. Сдвигаем второй куб по оси X на 1.0, чтобы он прилегал к первому
     let v2_off: Vec<parry3d_f64::glamx::DVec3> = v2.into_iter()
-        .map(|p| p + dvec3(1.0, 0.0, 0.0)) 
+        .map(|p| p + Vec3::new(1.0, 0.0, 0.0)) 
         .collect();
 
     // 2. Смещаем индексы: каждый индекс второго меша должен указывать на новые вершины в общем списке
@@ -252,14 +250,14 @@ fn create_well(desc: &'static str) -> TestScene {
     let mut all_i = Vec::new();
     // Смещения для 5 кубов: 1 основание + 4 стенки
     let offsets = vec![
-        dvec3(0.0, 0.0, 0.0),  // Дно
-        dvec3(1.0, 0.0, 1.0),  // Стенка +X
-        dvec3(-1.0, 0.0, 1.0), // Стенка -X
-        dvec3(0.0, 1.0, 1.0),  // Стенка +Y
-        dvec3(0.0, -1.0, 1.0), // Стенка -Y
+        Vec3::new(0.0, 0.0, 0.0),  // Дно
+        Vec3::new(1.0, 0.0, 1.0),  // Стенка +X
+        Vec3::new(-1.0, 0.0, 1.0), // Стенка -X
+        Vec3::new(0.0, 1.0, 1.0),  // Стенка +Y
+        Vec3::new(0.0, -1.0, 1.0), // Стенка -Y
     ];
     for offset in offsets {
-        let (v, i) = Cuboid::new(dvec3(0.5, 0.5, 0.5)).to_trimesh();
+        let (v, i) = Cuboid::new(Vec3::new(0.5, 0.5, 0.5)).to_trimesh();
         let v_len = all_v.len() as u32;
         let v_off: Vec<parry3d_f64::glamx::DVec3> = v.into_iter().map(|p| p + offset).collect();
         let i_off: Vec<[u32; 3]> = i.into_iter().map(|f| [f[0] + v_len, f[1] + v_len, f[2] + v_len]).collect();
@@ -275,10 +273,10 @@ fn create_well(desc: &'static str) -> TestScene {
 /// 5. Две несвязанные фигуры (проверка обработки разрозненных островов)
 /// Два куба по 1.0. Объем 2.0
 fn create_two_islands(desc: &'static str) -> TestScene {
-    let (mut v1, mut i1) = Cuboid::new(dvec3(0.5, 0.5, 0.5)).to_trimesh();
-    let (v2, i2) = Cuboid::new(dvec3(0.5, 0.5, 0.5)).to_trimesh();
+    let (mut v1, mut i1) = Cuboid::new(Vec3::new(0.5, 0.5, 0.5)).to_trimesh();
+    let (v2, i2) = Cuboid::new(Vec3::new(0.5, 0.5, 0.5)).to_trimesh();
     // Разносим их далеко друг от друга
-    let v2_off: Vec<parry3d_f64::glamx::DVec3> = v2.into_iter().map(|p| p + dvec3(10.0, 0.0, 0.0)).collect();
+    let v2_off: Vec<parry3d_f64::glamx::DVec3> = v2.into_iter().map(|p| p + Vec3::new(10.0, 0.0, 0.0)).collect();
     let i2_off: Vec<[u32; 3]> = i2.into_iter().map(|f| [f[0]+8, f[1]+8, f[2]+8]).collect();
     v1.extend(v2_off);
     i1.extend(i2_off);
@@ -294,9 +292,9 @@ fn create_pyramid(size: f64, desc: &'static str) -> TestScene {
     let h = size; // Высота
     let s = size / 2.0; // Половина основания
     let vertices = vec![
-        dvec3(-s, -s, 0.0), dvec3(s, -s, 0.0), 
-        dvec3(s, s, 0.0), dvec3(-s, s, 0.0),
-        dvec3(0.0, 0.0, h) // Вершина
+        Vec3::new(-s, -s, 0.0), Vec3::new(s, -s, 0.0), 
+        Vec3::new(s, s, 0.0), Vec3::new(-s, s, 0.0),
+        Vec3::new(0.0, 0.0, h) // Вершина
     ];
     let indices = vec![
         [0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4], // Бока
@@ -315,14 +313,14 @@ fn create_needle(length: f64, thickness: f64, desc: &'static str) -> TestScene {
     // Half-extents: length/2, thickness/2, thickness/2
     let h_len = length / 2.0;
     let h_thick = thickness / 2.0;
-    let (v, i) = Cuboid::new(dvec3(h_len, h_thick, h_thick)).to_trimesh();
+    let (v, i) = Cuboid::new(Vec3::new(h_len, h_thick, h_thick)).to_trimesh();
     // We rotate the needle slightly so it's not perfectly aligned with axes
     // This forces the intersection algorithm to work with non-zero coordinates
     let angle = 0.1; // small rotation in radians
-    let rotated_v: Vec<parry3d_f64::glamx::DVec3> = v.into_iter().map(|p| {
+    let rotated_v: Vec<Vec3> = v.into_iter().map(|p| {
         let x = p.x * angle.cos() - p.y * angle.sin();
         let y = p.x * angle.sin() + p.y * angle.cos();
-        dvec3(x, y, p.z)
+        Vec3::new(x, y, p.z)
     }).collect();
     TestScene {
         mesh: TriMesh::new(rotated_v, i).expect("Needle mesh failed"),
@@ -337,9 +335,9 @@ fn create_cross(desc: &'static str) -> TestScene {
     let mut all_i = Vec::new();
     // Три балки 3.0 x 1.0 x 1.0, ориентированные по осям X, Y и Z
     let dims = [
-        dvec3(1.5, 0.5, 0.5), // Балка вдоль X
-        dvec3(0.5, 1.5, 0.5), // Балка вдоль Y
-        dvec3(0.5, 0.5, 1.5), // Балка вдоль Z
+        Vec3::new(1.5, 0.5, 0.5), // Балка вдоль X
+        Vec3::new(0.5, 1.5, 0.5), // Балка вдоль Y
+        Vec3::new(0.5, 0.5, 1.5), // Балка вдоль Z
     ];
     for half_extents in dims {
         let (v, i) = Cuboid::new(half_extents).to_trimesh();
@@ -369,10 +367,10 @@ fn create_stairs(steps: usize, desc: &'static str) -> TestScene {
     let step_depth = 0.2;
     for i in 0..steps {
         // Каждая ступень — это блок step_width x step_depth x step_height
-        let half_extents = dvec3(step_width / 2.0, step_depth / 2.0, step_height / 2.0);
+        let half_extents = Vec3::new(step_width / 2.0, step_depth / 2.0, step_height / 2.0);
         let (v, idx) = Cuboid::new(half_extents).to_trimesh();
         // Смещаем каждую ступень: по Y (вглубь) и по Z (вверх)
-        let offset = dvec3(
+        let offset = Vec3::new(
             0.0, 
             i as f64 * step_depth, 
             i as f64 * step_height
@@ -398,10 +396,10 @@ fn create_tetrahedron(a: f64, desc: &'static str) -> TestScene {
     let h = a * (2.0 / 3.0).sqrt(); // Высота
     let r = a / (3.0).sqrt();       // Радиус описанной окружности основания
     let vertices = vec![
-        dvec3(r, 0.0, 0.0),                               // V0
-        dvec3(-r / 2.0, a / 2.0, 0.0),                    // V1
-        dvec3(-r / 2.0, -a / 2.0, 0.0),                   // V2
-        dvec3(0.0, 0.0, h),                               // V3 (Вершина)
+        Vec3::new(r, 0.0, 0.0),                               // V0
+        Vec3::new(-r / 2.0, a / 2.0, 0.0),                    // V1
+        Vec3::new(-r / 2.0, -a / 2.0, 0.0),                   // V2
+        Vec3::new(0.0, 0.0, h),                               // V3 (Вершина)
     ];
     let indices = vec![
         [0, 1, 2], // Основание (по часовой или против — проверьте нормали)
