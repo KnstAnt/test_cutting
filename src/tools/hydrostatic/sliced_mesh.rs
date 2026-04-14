@@ -1,7 +1,5 @@
 use parry3d_f64::math::Vec3;
-
 use crate::tools::{Hydrostatics, Plane};
-
 
 pub struct SlicedMesh {
     /// Треугольники, оказавшиеся под плоскостью (полезный объем)
