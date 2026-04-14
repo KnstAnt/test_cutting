@@ -23,10 +23,10 @@ fn hydrostatic_sofia() {
     ];
     let draught_steps: Vec<_> = (1..=28).map(|v| (v as f64) * 0.5).collect();*/
     let heel_steps = vec![
-        -60., -40., -20., -10., -5., -1., 0., 1., 5., 10., 20., 40., 60.,
+        -60., -20., -5., 0., 5.,  20., 60.,
     ];
     let trim_steps = vec![
-        -40., -20., -10., -5., -2., -1., 0., 1., 2., 5., 10., 20., 40.,
+        -40., -10., -2., 0., 2.,10., 40.,
     ];
     let draught_steps: Vec<_> = (1..=7).map(|v| (v as f64) * 2.).collect();
     let epsilon_volume_abs = 10.;
@@ -52,9 +52,9 @@ fn hydrostatic_sofia() {
                     } else {
                         0.
                     };
-                    println!(
+                /*    println!(
                         "{text} result:{result} target:{target} delta_abs:{delta_abs} delta_percent:{delta_percent}"
-                    );
+                    );*/
                     if delta_abs > epsilon_abs && delta_percent > epsilon_percent {
                         return Some((delta_abs, delta_percent, text, result, target));
                     }

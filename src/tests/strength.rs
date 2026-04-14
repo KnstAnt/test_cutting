@@ -35,10 +35,9 @@ pub fn strength_sofia_full() {
     let result = calculate_strength_full(mesh, &physical_frames, &draughts);
     let elapsed = t.elapsed();
     let mut cache = DisplacementCache::new(&dbg, "assets/displacement_cache_hull".into());
-    cache.init();
+    cache.init().unwrap();
     for (draught, result_volume) in &result {
         let target = cache.get_from_level(0., 0., *draught);
-
         println!(
             "{:.3} result:{:.3} target:{:.3} delta:{}",
             draught,
