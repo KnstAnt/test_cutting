@@ -58,13 +58,13 @@ pub fn calculate_hydrostatic_old(mut mesh: TriMesh, dx: f64, heel: f64, trim: f6
     (hydrostatics.volume, center_of_buoyancy)
 }
 
-pub fn calculate_hydrostatic(mesh: TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> (f64, Vec3) {
+pub fn calculate_hydrostatic(mesh: &TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> (f64, Vec3) {
     let center = Vec3::new(dx, 0., 0.);
     let isometry = position(&center, heel, trim, draught).inverse();
     let local_point = isometry.transform_point(Vec3::ZERO); 
     let local_normal = isometry.transform_vector(Vec3::Z).normalize(); 
     let plane = Plane::from_point_and_normal(local_point, local_normal);
-    let sliced_mesh = plane.slice_mesh(&mesh);
+    let sliced_mesh = plane.slice_mesh(mesh);
     let hydrostatics = sliced_mesh.hydrostatics(&plane);
     let center_of_buoyancy = hydrostatics.center_of_buoyancy;
     (hydrostatics.volume, center_of_buoyancy)
