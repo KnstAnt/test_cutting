@@ -36,11 +36,7 @@ impl SlicedMesh {
         }
         total_volume.abs()
     }
-    ///
-    /// Вычисление физических характеристик (объема, центра величины/масс, моментов инерции) традиционно делают через интегрирование по объему,
-    /// но для полигональных сеток это решается в разы элегантнее — через интегрирование по поверхности.
-    /// В основе лежит Теорема о дивергенции (Формула Остроградского-Гаусса)
-    pub fn hydrostatics(&self, plane: &Plane) -> Hydrostatics {
+    pub fn hydrostatics_old(&self, plane: &Plane) -> Hydrostatics {
         let mut total_volume = 0.0;
         let mut sum_centroid = Vec3::ZERO;
         // Вспомогательная замыкание (closure) для добавления тетраэдра
@@ -90,6 +86,57 @@ impl SlicedMesh {
         };
         Hydrostatics {
             volume: total_volume.abs(),
+            center_of_buoyancy,
+        }
+    }    
+    //
+    pub fn hydrostatics(&self, plane: &Plane) -> Hydrostatics {
+        let mut total_volume = 0.0;
+        let mut sum_centroid = Vec3::ZERO;
+
+        // 1. Находим точку на плоскости, которая будет вершиной всех тетраэдров.
+        // Это гарантирует, что "крышка" (ватерлиния) имеет нулевой объем
+        // и не влияет на итоговую сумму.
+        // plane.d в вашей реализации — это normal.dot(point).
+        let p_ref = plane.normal * plane.d;
+
+        // 2. Интегрируем только погруженные треугольники корпуса
+        for tri in &self.submerged_triangles {
+            let p0 = tri[0];
+            let p1 = tri[1];
+            let p2 = tri[2];
+
+            // Векторы сторон тетраэдра относительно точки на плоскости воды
+            let a = p0 - p_ref;
+            let b = p1 - p_ref;
+            let c = p2 - p_ref;
+
+            // Знаковый объем тетраэдра (смешанное произведение)
+            // 1/6 * |(a × b) · c|
+            let v_i = a.dot(b.cross(c)) / 6.0;
+
+            total_volume += v_i;
+
+            // Центроид тетраэдра: (p0 + p1 + p2 + p_ref) / 4
+            // Взвешиваем центроид объемом тетраэдра
+            let centroid_i = (p0 + p1 + p2 + p_ref) * 0.25;
+            sum_centroid += centroid_i * v_i;
+        }
+
+        // 3. Финальные расчеты. 
+        // Если нормаль плоскости смотрит "вверх", объем погруженной части 
+        // корпуса (нормали которого "наружу") будет отрицательным. 
+        // Это нормально, берем модуль.
+        let abs_volume = total_volume.abs();
+
+        let center_of_buoyancy = if abs_volume > f64::EPSILON {
+            // Делим на знаковый объем, чтобы сохранить правильную ориентацию центра
+            sum_centroid / total_volume
+        } else {
+            Vec3::ZERO
+        };
+        Hydrostatics {
+            volume: abs_volume,
             center_of_buoyancy,
         }
     }
