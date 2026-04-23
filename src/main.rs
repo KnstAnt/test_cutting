@@ -87,7 +87,7 @@ fn test_sofia () {
         for &trim in &trim_steps {
             for &draught in &draught_steps {
                 let (result_volume, result_center) =
-                    calculate_hydrostatic(mesh.clone(), dx, heel, trim, draught);
+                    calculate_hydrostatic(&mesh, dx, heel, trim, draught);
                 let (target_volume, target_center) =
                     calculate_hydrostatic_old(mesh.clone(), dx, heel, trim, draught);
                 let check = |text: String,
