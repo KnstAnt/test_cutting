@@ -28,7 +28,7 @@ fn test_cuboid_volume() {
     result.submerged_triangles.push([p1, p4, p3]);
 
     // 4. Проверка объема
-    let volume = result.volume(&plane);
+    let volume = result.volume();
     let expected_volume = 4.0; // Половина куба 2x2x2
     
     println!("Куб 2x2x2 (объем = 8.0) | Calculated Volume: {}", volume);
@@ -47,7 +47,7 @@ fn test_volume() {
             Vec3::Z
         );
         let sliced_full = high_plane.slice_mesh(&scene.mesh);
-        let vol_full = sliced_full.volume(&high_plane);
+        let vol_full = sliced_full.volume();
         println!("Full Slice: {:<25} | Calc: {:.4} | Target: {:.4}", 
                  scene.description, vol_full, scene.full_volume);
         assert!((vol_full - scene.full_volume).abs() < 1e-3, 
@@ -62,7 +62,7 @@ fn test_volume() {
                 let slice_elapsed = t.elapsed();
                 // let result = cap_and_get_volume(&sliced_half, &plane);
                 let t = Instant::now();
-                let result = sliced_half.volume(&plane);
+                let result = sliced_half.volume();
                 let volume_elapsed = t.elapsed();
                 let target = scene.full_volume  * factor;
                 println!("Half Slice: {:<25} | Calc: {:.4} | Target: {:.4} | Slice Elapsed: {:?} | Volume Elapsed: {:?}", 
@@ -86,7 +86,7 @@ fn test_hydrostatics() {
                 Vec3::Z
             );
             let sliced_full = plane.slice_mesh(&scene.mesh);
-            let result = sliced_full.hydrostatics(&plane).volume;
+            let result = sliced_full.hydrostatics().volume;
             let target = scene.full_volume;
             println!("Full Slice: {:<25} | Calc: {:.4} | Target: {:.4}", 
                      scene.description, result, target);
@@ -102,7 +102,7 @@ fn test_hydrostatics() {
                 let slice_elapsed = t.elapsed();
                 // let result = cap_and_get_volume(&sliced_half, &plane);
                 let t = Instant::now();
-                let result = sliced_half.hydrostatics(&plane).volume;
+                let result = sliced_half.hydrostatics().volume;
                 let volume_elapsed = t.elapsed();
                 let target = scene.full_volume  * factor;
                 println!("Half Slice: {:<25} | Calc: {:.4} | Target: {:.4} | Slice Elapsed: {:?} | Volume Elapsed: {:?}", 

@@ -1,6 +1,7 @@
-use parry3d_f64::{math::*, shape::TriMesh};
 use crate::tools::SlicedMesh;
+use parry3d_f64::{math::*, shape::TriMesh};
 
+#[derive(Clone)]
 /// Секущая плоскость: (n, p) = d
 pub struct Plane {
     pub normal: Vec3,
@@ -22,89 +23,88 @@ impl Plane {
         self.normal.dot(*point) - self.d
     }
     ///
-    /// Функция, которая принимает TriMesh из parry и сечет ее плоскостью. 
+    /// Функция, которая принимает TriMesh из parry и сечет ее плоскостью.
     /// Мы будем сохранять только те части треугольников, которые находятся «под» плоскостью (d≤0),
     /// что типично для задачи расчета погруженного объема судна.
     /// Также мы соберем отрезки, лежащие на самой секущей плоскости (периметр сечения).
     pub fn slice_mesh(&self, mesh: &TriMesh) -> SlicedMesh {
-        let vertices  = mesh.vertices(); 
+        let vertices = mesh.vertices();
         let indices = mesh.indices();
-        // Шаг 1: Предварительно вычисляем расстояния для всех вершин.
-        // Это отлично векторизуется и предотвращает повторные расчеты для смежных треугольников.
-        let distances: Vec<f64> = vertices.iter().map(|v| self.distance(&Vec3::new(v.x, v.y, v.z))).collect();
-        let mut submerged_triangles = Vec::with_capacity(indices.len() / 2);
+
+        // Предварительный расчет расстояний
+        let distances: Vec<f64> = vertices
+            .iter()
+            .map(|v| self.distance(&Vec3::new(v.x, v.y, v.z)))
+            .collect();
+
+        let mut submerged_triangles = Vec::with_capacity(indices.len());
         let mut waterline_edges = Vec::new();
-        // Шаг 2: Проходим по всем треугольникам
+
         for face in indices {
-            let v0 = &vertices[face[0] as usize];
-            let v1 = &vertices[face[1] as usize];
-            let v2 = &vertices[face[2] as usize];
-            let d0 = distances[face[0] as usize];
-            let d1 = distances[face[1] as usize];
-            let d2 = distances[face[2] as usize];
-            // Собираем вершины и их расстояния в массив для удобной сортировки
-            let mut pts = [
-                (v0, d0),
-                (v1, d1),
-                (v2, d2),
+            let idx = [face[0] as usize, face[1] as usize, face[2] as usize];
+            let d = [distances[idx[0]], distances[idx[1]], distances[idx[2]]];
+            let v = [
+                Vec3::new(vertices[idx[0]].x, vertices[idx[0]].y, vertices[idx[0]].z),
+                Vec3::new(vertices[idx[1]].x, vertices[idx[1]].y, vertices[idx[1]].z),
+                Vec3::new(vertices[idx[2]].x, vertices[idx[2]].y, vertices[idx[2]].z),
             ];
-            // Считаем, сколько вершин находится "над" водой (положительное расстояние)
-            let above_count = pts.iter().filter(|&&(_, d)| d > 0.0).count();
+
+            let above_mask = [d[0] > 0.0, d[1] > 0.0, d[2] > 0.0];
+            let above_count = above_mask.iter().filter(|&&a| a).count();
+
             match above_count {
                 0 => {
-                    // Весь треугольник под водой. Просто копируем.
-                    submerged_triangles.push([Vec3::new(v0.x, v0.y, v0.z), Vec3::new(v1.x, v1.y, v1.z), Vec3::new(v2.x, v2.y, v2.z)]);
+                    // Полностью под водой
+                    submerged_triangles.push([v[0], v[1], v[2]]);
                 }
                 3 => {
-                    // Весь треугольник над водой. Игнорируем.
+                    // Полностью над водой — игнорируем
                 }
                 1 => {
-                    // 1 вершина над водой, 2 под водой.
-                    // Треугольник обрезается, превращаясь в четырехугольник (2 новых треугольника под водой).
-                    // Сдвигаем массив так, чтобы вершина "над водой" (d > 0) оказалась на нулевой позиции (pts[0])
-                    while pts[0].1 <= 0.0 {
-                        pts.rotate_left(1);
-                    }
-                    let top = pts[0].0;
-                    let bottom1 = pts[1].0;
-                    let bottom2 = pts[2].0;
-                    // Находим две точки пересечения на ребрах (top -> bottom1) и (top -> bottom2)
-                    let i1 = intersect_edge(top, bottom1, pts[0].1, pts[1].1);
-                    let i2 = intersect_edge(top, bottom2, pts[0].1, pts[2].1);
-                    // Добавляем два новых треугольника, сохраняя порядок обхода (winding order)
-                    submerged_triangles.push([Vec3::new(bottom1.x, bottom1.y, bottom1.z), Vec3::new(bottom2.x, bottom2.y, bottom2.z), Vec3::new(i1.x, i1.y, i1.z)]);
-                    submerged_triangles.push([Vec3::new(bottom2.x, bottom2.y, bottom2.z), Vec3::new(i2.x, i2.y, i2.z), Vec3::new(i1.x, i1.y, i1.z)]);
-                    // submerged_triangles.push([*bottom2, i2, i1]);
-                    // Добавляем ребро сечения в контур
-                    waterline_edges.push([i2, i1]);
+                    // Одна вершина над водой. Ищем её индекс.
+                    let i0 = above_mask.iter().position(|&a| a).unwrap();
+                    let i1 = (i0 + 1) % 3;
+                    let i2 = (i0 + 2) % 3;
+
+                    // Точки пересечения на ребрах, выходящих из i0
+                    let p1 = intersect_edge(&v[i0], &v[i1], d[i0], d[i1]);
+                    let p2 = intersect_edge(&v[i0], &v[i2], d[i0], d[i2]);
+
+                    // Оставшаяся под водой часть — четырехугольник (v[i1], v[i2], p2, p1)
+                    // Разбиваем на два треугольника, сохраняя порядок обхода (i1 -> i2 -> p2 -> p1)
+                    submerged_triangles.push([v[i1], v[i2], p1]);
+                    submerged_triangles.push([v[i2], p2, p1]);
+
+                    // Ребро ватерлинии: от p1 к p2 (согласовано с обходом)
+                    waterline_edges.push([p1, p2]);
                 }
                 2 => {
-                    // 2 вершины над водой, 1 под водой.
-                    // Треугольник обрезается, остаётся 1 маленький треугольник под водой.
-                    // Сдвигаем массив так, чтобы вершина "под водой" (d <= 0) оказалась на нулевой позиции (pts[0])
-                    while pts[0].1 > 0.0 {
-                        pts.rotate_left(1);
-                    }
-                    let bottom = pts[0].0;
-                    let top1 = pts[1].0;
-                    let top2 = pts[2].0;
-                    // Находим две точки пересечения
-                    let i1 = intersect_edge(bottom, top1, pts[0].1, pts[1].1);
-                    let i2 = intersect_edge(bottom, top2, pts[0].1, pts[2].1);
-                    // Добавляем новый маленький треугольник
-                    submerged_triangles.push([Vec3::new(bottom.x, bottom.y, bottom.z), Vec3::new(i1.x, i1.y, i1.z), Vec3::new(i2.x, i2.y, i2.z)]);
-                    // Добавляем ребро сечения в контур
-                    waterline_edges.push([i1, i2]);
+                    // Две вершины над водой, одна под. Ищем индекс той, что ПОД.
+                    let i0 = above_mask.iter().position(|&a| !a).unwrap();
+                    let i1 = (i0 + 1) % 3;
+                    let i2 = (i0 + 2) % 3;
+
+                    // Точки пересечения на ребрах, выходящих из i0
+                    let p1 = intersect_edge(&v[i0], &v[i1], d[i0], d[i1]);
+                    let p2 = intersect_edge(&v[i0], &v[i2], d[i0], d[i2]);
+
+                    // Один треугольник под водой: (v[i0], p1, p2)
+                    submerged_triangles.push([v[i0], p1, p2]);
+
+                    // Ребро ватерлинии: от p2 к p1 (согласовано с обходом)
+                    waterline_edges.push([p2, p1]);
                 }
                 _ => unreachable!(),
             }
         }
+
         SlicedMesh {
-            submerged_triangles, //: submerged_triangles.into_iter().map(|vv| vv.map(|v| Point3::new(v.x, v.y, v.z))).collect(),
-            waterline_edges: waterline_edges.into_iter().map(|vv| vv.map(|v| Vec3::new(v.x, v.y, v.z))).collect(),
+            submerged_triangles,
+            waterline_edges,
         }
     }
 }
+
 ///
 /// Математика пересечения ребра $V_a V_b$ с плоскостью использует линейную интерполяцию.
 /// Если $d_a$ и $d_b$ — расстояния от вершин до плоскости, то точка пересечения $I$ вычисляется как:

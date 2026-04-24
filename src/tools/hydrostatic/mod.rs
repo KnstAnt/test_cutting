@@ -30,7 +30,7 @@ pub fn test_sofia() {
     //   let (center, normal) = normal(center, heel, trim, dz);
     let plane = Plane::from_point_and_normal(center, Vec3::new(0., 0., 1.));
     let sliced_mesh = plane.slice_mesh(&mesh);
-    let hydrostatics = sliced_mesh.hydrostatics(&plane);
+    let hydrostatics = sliced_mesh.hydrostatics();
     let center_of_buoyancy = hydrostatics.center_of_buoyancy;
     let center_of_buoyancy = isometry.inverse_transform_point(center_of_buoyancy);
     println!(
@@ -65,12 +65,27 @@ pub fn calculate_hydrostatic(mesh: &TriMesh, dx: f64, heel: f64, trim: f64, drau
     let local_normal = isometry.transform_vector(Vec3::Z).normalize(); 
     let plane = Plane::from_point_and_normal(local_point, local_normal);
     let sliced_mesh = plane.slice_mesh(mesh);
-    let hydrostatics = sliced_mesh.hydrostatics(&plane);
+    let hydrostatics = sliced_mesh.hydrostatics();
     let center_of_buoyancy = hydrostatics.center_of_buoyancy;
     (hydrostatics.volume, center_of_buoyancy)
 }
 
+pub fn calculate_waterline(mesh: &TriMesh, dx: f64, heel: f64, trim: f64, draught: f64) -> (f64, Vec3) {
+    let center: Vec3 = Vec3::new(dx, 0., 0.);
+    let isometry = position(&center, heel, trim, draught).inverse();
+    let local_point = isometry.transform_point(Vec3::ZERO); 
+    let local_normal = isometry.transform_vector(Vec3::Z).normalize(); 
+    let plane = Plane::from_point_and_normal(local_point, local_normal);
 
+    let mut sliced_mesh = plane.slice_mesh(mesh);
+
+    let isometry = isometry.inverse();
+    sliced_mesh.waterline_edges = sliced_mesh.waterline_edges.iter()
+       .map(|v| [isometry.transform_point(v[0]), isometry.transform_point(v[1])] ).collect();
+    let (area, area_center) = sliced_mesh.calculate_waterline_properties();
+
+    (area, isometry.inverse_transform_point(area_center))
+}
 /*
 fn test_sofia() -> usize {
     let scale = 0.001f64;
