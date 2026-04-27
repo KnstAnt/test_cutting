@@ -159,7 +159,6 @@ impl SlicedMesh {
     }
     //
     //
-
     pub fn calculate_waterline_properties(&self) -> (f64, Vec3) {
         let edges = &self.waterline_edges;
 
@@ -214,5 +213,71 @@ impl SlicedMesh {
         let centroid = Vec3::new(origin.x + cx, origin.y + cy, origin.z + cz);
 
         (area, centroid)
+    }
+    ///
+    /// Расчет момента инерции свободной поверхности жидкости
+    pub fn inertia(&self) -> (f64, f64) {
+        let edges = &self.waterline_edges;
+
+        if edges.is_empty() {
+            return (0.0, 0.0);
+        }
+
+        let mut area = 0.0;
+        let mut sx = 0.0;
+        let mut sy = 0.0;
+        let mut ix_0 = 0.0;
+        let mut iy_0 = 0.0;
+
+        for edge in edges {
+            let (x1, y1) = (edge[0].x as f64, edge[0].y as f64);
+            let (x2, y2) = (edge[1].x as f64, edge[1].y as f64);
+
+            // Интеграл по контуру (формула Гаусса/Грина)
+            let f = x1 * y2 - x2 * y1;
+            
+            area += f;
+            sx += (y1 + y2) * f;
+            sy += (x1 + x2) * f;
+            ix_0 += (y1 * y1 + y1 * y2 + y2 * y2) * f;
+            iy_0 += (x1 * x1 + x1 * x2 + x2 * x2) * f;
+        }
+
+        let area = area / 2.0;
+        if area.abs() < 1e-10 { return (0.0, 0.0); }
+
+        // Координаты центра тяжести сечения
+        let cy = sx / (6.0 * area);
+        let cx = sy / (6.0 * area);
+
+        // Моменты относительно центральных осей (теорема Штейнера)
+        // Формула: I_central = |I_origin / 12| - Area * dist^2
+        let ix = (ix_0 / 12.0).abs() - area.abs() * cy * cy;
+        let iy = (iy_0 / 12.0).abs() - area.abs() * cx * cx;
+
+        (ix, iy)
+    }
+    ///
+    /// Расчет длинны и ширины по ватерлинии
+    pub fn waterline_size(&self) -> (f64, f64) {
+        let (min_p, max_p) = self.waterline_edges
+            .iter()
+            .flat_map(|edge| [edge[0], edge[1]]) 
+            .fold(
+                ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN)),
+
+                |((min_x, min_y), (max_x, max_y)), p| {
+                    (
+                        (min_x.min(p.x as f64), min_y.min(p.y as f64)),
+                        (max_x.max(p.x as f64), max_y.max(p.y as f64)),
+                    )
+                },
+            );
+
+        if min_p.0 == f64::MAX {
+            (0.0, 0.0)
+        } else {
+            (max_p.0 - min_p.0, max_p.1 - min_p.1)
+        }
     }
 }
