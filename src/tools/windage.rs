@@ -1,5 +1,5 @@
 use parry3d_f64::shape::TriMesh;
-use sal_core::error::Error;
+use sal_core::{dbg::Dbg, error::Error};
 
 use crate::tools::{Bound, Bounds};
 
@@ -38,6 +38,10 @@ pub struct WindageStrip {
 pub struct WindageProfile {
     /// Смещение миделя по Х относительно начала координат
     pub dx: f64,
+    /// Минимальная осадка
+    pub draught_min: f64,
+    /// Длинна между перпендикулярами
+    pub lbp: f64,
     /// Описание сетки по X (от кормы до носа)
     pub x_bounds: Bounds,
     /// Высоты (min_z, max_z) для каждой части x_bounds
@@ -45,7 +49,7 @@ pub struct WindageProfile {
 }
 
 impl WindageProfile {
-    pub fn new(mesh: &parry3d_f64::shape::TriMesh, dx: f64, resolution: u32) -> Self {
+    pub fn new(mesh: &parry3d_f64::shape::TriMesh, dx: f64, draught_min: f64, lbp: f64, resolution: u32) -> Self {
         let aabb = mesh.local_aabb();
         let (x_min, x_max) = (aabb.mins.x, aabb.maxs.x);
         
@@ -72,14 +76,50 @@ impl WindageProfile {
             }
         }
 
-        Self { dx, x_bounds, z_bounds: z_data }
+        Self { draught_min, dx, lbp, x_bounds, z_bounds: z_data }
     }
     /// Расчет площади и центра площади парусности для минимальной осадки
-    pub fn windage_area_min(&self) -> Result<(f64, f64, f64), Error> {
-        // Минимальная осадка — это самая низкая точка z_min во всем профиле
-        let min_z = self.z_bounds.iter().map(|(z1, _)| *z1).fold(f64::MAX, f64::min);
-        let res = self.windage_area(min_z, 0.)?;
-        Ok((res.area, res.z_center, res.moment_x))
+    /// результат: (area_v, moment_av_x, moment_av_z, area_sub_shift_z)
+    pub fn _windage_area(&self, draught: f64, trim: f64) -> Result<(f64, f64, f64, f64), Error> {
+    //    let error = Error::new(&self.dbg, "_windage_area");
+
+        let trim = trim.to_radians().tan();  
+
+        let mut av = 0.0;
+        let mut mv_x = 0.0;
+        let mut mv_z = 0.0;
+
+        // Переменные для подводной части
+        let mut sub_area = 0.0;
+        let mut sub_mz = 0.0;
+
+        for (i, x_bound) in self.x_bounds.iter().enumerate() {
+            let x = x_bound.center().unwrap_or(0.0);
+            let dx = x_bound.length().unwrap_or(0.0);
+            let (z_min, z_max) = self.z_bounds[i];
+
+            // Локальные осадки
+            let local_draught = draught + (x - dx) * trim;
+
+            // Расчет для текущей осадки
+            let h_curr = (z_max - z_min.max(local_draught)).max(0.0);
+            let a_curr = h_curr * dx;
+            av += a_curr;
+            mv_x += x * a_curr;
+            mv_z += ((z_max + z_min.max(local_draught)) * 0.5) * a_curr;
+
+            // Расчет подводной проекции (area_volume_z)
+            let s_top = z_max.min(local_draught);
+            if s_top > z_min {
+                let a_sub = (s_top - z_min) * dx;
+                sub_area += a_sub;
+                sub_mz += ((s_top + z_min) * 0.5) * a_sub;
+            }
+        }
+
+        let area_sub_shift_z = if sub_area > f64::MIN {sub_mz/sub_area} else { 0. };
+
+        Ok((av, mv_x, mv_z, area_sub_shift_z))
     }
 
     /// Расчет распределения площади парусности
@@ -98,130 +138,31 @@ impl WindageProfile {
     }
 
     /// Расчет площади и центра площади парусности
-    /// Возвращает (площадь_парусности, Z_центра_парусности, момент_X, Z_центра_подводной_части_проекции)
-    pub fn windage_area(&self, draught_mid: f64, trim: f64) -> Result<AreaResult, Error> {
-        let mut w_area = 0.0;
-        let mut w_mz = 0.0;
-        let mut w_mx = 0.0;
-        let mut sub_area = 0.0;
-        let mut sub_mz = 0.0;
-
-        let tan_trim = trim.to_radians().tan();
-
-        for (i, x_bound) in self.x_bounds.iter().enumerate() {
-            let x = x_bound.center().unwrap_or(0.0);
-            let dx = x_bound.length().unwrap_or(0.0);
-            let (z_min, z_max) = self.z_bounds[i];
-
-            // Локальная осадка в данной точке X
-            let local_draught = draught_mid.to_radians() + (x - self.dx) * tan_trim;
-
-            // Надводная часть
-            let w_bottom = z_min.max(local_draught);
-            if z_max > w_bottom {
-                let a = (z_max - w_bottom) * dx;
-                w_area += a;
-                w_mx += x * a;
-                w_mz += ((z_max + w_bottom) * 0.5) * a;
-            }
-
-            // Подводная часть (проекция)
-            let s_top = z_max.min(local_draught);
-            if s_top > z_min {
-                let a = (s_top - z_min) * dx;
-                sub_area += a;
-                sub_mz += ((s_top + z_min) * 0.5) * a;
-            }
-        }
-
-        if w_area < 1e-9 { return Ok(AreaResult::zero()); }
+    pub fn windage_area(&self, draught: f64, trim: f64) -> Result<AreaResult, Error> {
+  //      let error = Error::new("Bounds", "intersect");
+        let (av_cs_dmin, mv_x_cs_dmin, mv_z_cs_dmin, _) = self._windage_area(self.draught_min, trim)?;
+        let (av_current, mv_x_current, mv_z_current, area_volume_z) = self._windage_area(draught, trim)?;
 
         Ok(AreaResult {
-            area: w_area,
-            z_center: w_mz / w_area,
-            moment_x: w_mx,
-            sub_z_center: if sub_area > 1e-9 { sub_mz / sub_area } else { 0.0 },
+            av_cs_dmin,
+            mv_x_cs_dmin,
+            mv_z_cs_dmin,
+            delta_av: av_current - av_cs_dmin,
+            delta_mv_x: mv_x_current - mv_x_cs_dmin,
+            delta_mv_z: mv_z_current - mv_z_cs_dmin,
+            area_volume_z,
         })
     }
-
     /// Расчет площади проекции по правилу дополнительного запаса плавучести в носу
-    pub fn bow_area(&self, trim: f64, draught: f64, lbp: f64, x_ref: f64) -> Result<f64, Error> {
+    pub fn bow_area(&self, trim: f64, draught: f64) -> Result<f64, Error> {
         let error = Error::new("WindageProfile", "bow_area");
-        let bow_filter = Bound::new(lbp * 0.85, lbp).map_err(|e| error.pass_with("bow_bound", e))?;
-        let tan_trim = trim.tan();
-        let mut total_bow_area = 0.0;
-
-        for (i, x_bound) in self.x_bounds.iter().enumerate() {
-            let ratio = x_bound.part_ratio(&bow_filter).unwrap_or(0.0);
-            if ratio <= 0.0 { continue; }
-
-            let x = x_bound.center().unwrap_or(0.0);
-            let local_draught = draught + (x - x_ref) * tan_trim;
-            let (z_min, z_max) = self.z_bounds[i];
-
-            let top = z_max;
-            let bottom = z_min.max(local_draught);
-
-            if top > bottom {
-                total_bow_area += (top - bottom) * x_bound.length().unwrap_or(0.0) * ratio;
-            }
-        }
-        Ok(total_bow_area)
+        let bow_filter = Bound::new(self.lbp * 0.85, self.lbp).map_err(|e| error.pass_with("bow_bound", e))?;
+        let trim = trim.to_radians().tan();
+        let area: f64 = self.x_bounds.iter().zip(self.z_bounds.iter()).map(|(x, (z_min, z_max))| {
+            let local_draught = draught + (x.center().unwrap_or(0.0) - self.dx) * trim;
+            let local_area = (z_max - z_min.max(local_draught)).max(0.)*x.length().unwrap_or(0.0);
+            x.part_ratio(&bow_filter).map(|ratio| local_area *ratio).unwrap_or(0.)
+        }).sum();
+        Ok(area)
     }
-}
-/// Расчет площади проекции по правилу дополнительного запаса плавучести в носу
-/// [https://github.com/a-givertzman/sss/blob/master/design/algorithm/part03_draft/chapter02_draftCriteria/section04_bowBuoyancy.md]
-/// Возвращает набор вокселей для кэша обрезанных по длине по длине в корме 0.15LBP от носового перпендикуляра
-/// и в нос носовым перпендикуляром
-fn get_bow_area_values(
-    profile: &WindageProfile,
-    lbp: f64,
-    target_bounds: &Bounds,
-    draught: f64,
-) -> Result<Vec<f64>, Error> {
-    let error = Error::new("Windage", "get_bow_area");
-    let bow_filter = Bound::new(lbp * 0.85, lbp).map_err(|e| error.pass_with("bow_bound", e))?;
-
-    // Считаем площади полосок, обрезанные и по осадке, и по продольному фильтру носа
-    let src_values: Vec<f64> = profile.x_bounds.iter().enumerate()
-        .map(|(i, &x)| {
-            let (z_min, z_max) = profile.z_bounds[i];
-            let strip_bound = Bound::new(x - profile.scale_dx / 2.0, x + profile.scale_dx / 2.0).unwrap();
-            
-            // Насколько полоска попадает в зону [0.85LBP - 1.0LBP]
-            let ratio = strip_bound.part_ratio(&bow_filter).unwrap_or(0.0);
-            
-            let top = z_max;
-            let bottom = z_min.max(draught);
-            if top > bottom && ratio > 0.0 {
-                (top - bottom) * profile.scale_dx * ratio
-            } else {
-                0.0
-            }
-        })
-        .collect();
-
-    let src_bounds = profile.as_bounds()?;
-    target_bounds.intersect(&src_bounds, &src_values)
-}
-/// Пересчет в распределение суммарных площадей по х
-fn get_bounds_area(
-    profile: &WindageProfile,
-    target_bounds: &Bounds,
-    draught: f64,
-) -> Result<Vec<f64>, Error> {
-    let error = Error::new("Windage", "get_bounds_area");
-
-    // 1. Получаем площади полосок с учетом текущей осадки
-    let src_values: Vec<f64> = profile.z_bounds.iter()
-        .map(|&(z_min, z_max)| {
-            let top = z_max;
-            let bottom = z_min.max(draught);
-            if top > bottom { (top - bottom) * profile.scale_dx } else { 0.0 }
-        })
-        .collect();
-
-    // 2. Пересчитываем в целевую сетку через intersect
-    let src_bounds = profile.as_bounds().map_err(|e| error.pass_with("profile.as_bounds", e))?;
-    target_bounds.intersect(&src_bounds, &src_values)
 }
