@@ -1,10 +1,7 @@
 use parry3d_f64::math::Vec3;
 use sal_core::dbg::Dbg;
 use std::path::Path;
-
-use crate::tools::{
-    DisplacementCache, LocalCache, calculate_hydrostatic, calculate_hydrostatic_old, load_stl, *,
-};
+use crate::tools::*;
 
 #[test]
 fn hydrostatic_sofia1() {

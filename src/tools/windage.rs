@@ -154,7 +154,7 @@ impl WindageProfile {
         })
     }
     /// Расчет площади проекции по правилу дополнительного запаса плавучести в носу
-    pub fn bow_area(&self, trim: f64, draught: f64) -> Result<f64, Error> {
+    pub fn bow_area(&self, draught: f64, trim: f64) -> Result<f64, Error> {
         let error = Error::new("WindageProfile", "bow_area");
         let bow_filter = Bound::new(self.lbp * 0.85, self.lbp).map_err(|e| error.pass_with("bow_bound", e))?;
         let trim = trim.to_radians().tan();
